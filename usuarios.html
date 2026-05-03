@@ -20,7 +20,7 @@
         {% for u in usuarios %}
         <tr id="tr-{{ u.id }}">
           <td>{{ u.nome }}</td>
-          <td>{{ u.cpf }}</td>
+          <td>{{ u.cpf[:3] + '.' + u.cpf[3:6] + '.' + u.cpf[6:9] + '-' + u.cpf[9:11] if u.cpf and u.cpf|length == 11 else u.cpf }}</td>
           <td>{{ u.email }}</td>
           <td>{{ u.orgao }}</td>
           <td><span class="badge badge-{{ u.nivel }}">{{ u.nivel|upper }}</span></td>
@@ -57,7 +57,7 @@
       </div>
       <div>
         <label>CPF *</label>
-        <input type="text" id="m-cpf" placeholder="Somente números">
+        <input type="text" id="m-cpf" placeholder="000.000.000-00" maxlength="14" oninput="formatarCPF(this)">
       </div>
     </div>
     <div class="form-row">
@@ -109,6 +109,31 @@
 </div>
 
 <script>
+function formatarCPF(input) {
+  let v = input.value.replace(/\D/g, '');
+  if (v.length > 11) v = v.slice(0, 11);
+  if (v.length > 9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+  else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{1,3})/, '$1.$2.$3');
+  else if (v.length > 3) v = v.replace(/(\d{3})(\d{1,3})/, '$1.$2');
+  input.value = v;
+}
+
+function validarCPF(cpf) {
+  cpf = cpf.replace(/\D/g, '');
+  if (cpf.length !== 11) return false;
+  if (/^(\d)\1+$/.test(cpf)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(cpf[i]) * (10 - i);
+  let rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  if (rev !== parseInt(cpf[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(cpf[i]) * (11 - i);
+  rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  return rev === parseInt(cpf[10]);
+}
+
 function abrirModal() {
   document.getElementById('modal').style.display = 'flex';
 }
@@ -119,7 +144,8 @@ function fecharModal() {
 
 async function salvarUsuario() {
   const nome   = document.getElementById('m-nome').value.trim();
-  const cpf    = document.getElementById('m-cpf').value.trim();
+  const cpfRaw = document.getElementById('m-cpf').value.trim();
+  const cpf    = cpfRaw.replace(/\D/g, '');
   const email  = document.getElementById('m-email').value.trim();
   const orgao  = document.getElementById('m-orgao').value;
   const nivel  = document.getElementById('m-nivel').value;
@@ -127,6 +153,12 @@ async function salvarUsuario() {
   const senha2 = document.getElementById('m-senha2').value;
 
   const erroEl = document.getElementById('erro-modal');
+
+  if (!validarCPF(cpf)) {
+    erroEl.textContent = 'CPF inválido. Verifique o número digitado.';
+    erroEl.style.display = 'block';
+    return;
+  }
   if (senha !== senha2) {
     erroEl.textContent = 'As senhas não coincidem.';
     erroEl.style.display = 'block';
