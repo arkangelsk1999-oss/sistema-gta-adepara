@@ -28,6 +28,13 @@ label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; font-w
 input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
 input:focus { outline: none; border-color: #1a5276; }
 
+.senha-wrap { position: relative; }
+.senha-wrap input { padding-right: 40px; }
+.senha-wrap .olho {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  cursor: pointer; font-size: 16px; user-select: none;
+}
+
 .btn-entrar {
   width: 100%; background: #1a5276; color: white; border: none;
   padding: 12px; border-radius: 4px; font-size: 15px; font-weight: bold;
@@ -66,7 +73,10 @@ input:focus { outline: none; border-color: #1a5276; }
     </div>
     <div class="form-group">
       <label>Senha</label>
-      <input type="password" name="senha" placeholder="••••••••" required>
+      <div class="senha-wrap">
+        <input type="password" id="senha" name="senha" placeholder="••••••••" required>
+        <span class="olho" onclick="toggleSenha()">👁️</span>
+      </div>
     </div>
     <button type="submit" class="btn-entrar">Entrar</button>
   </form>
@@ -77,6 +87,20 @@ input:focus { outline: none; border-color: #1a5276; }
          onerror="this.style.display='none'">
   </div>
 </div>
+
+<script>
+function toggleSenha() {
+  const input = document.getElementById('senha');
+  const olho = document.querySelector('.olho');
+  if (input.type === 'password') {
+    input.type = 'text';
+    olho.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    olho.textContent = '👁️';
+  }
+}
+</script>
 
 </body>
 </html>
