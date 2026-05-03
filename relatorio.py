@@ -11,7 +11,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-STATIC = Path(__file__).parent / 'static' / 'img'
+STATIC = Path(__file__).parent
 
 AZUL       = "1A5276"
 VERMELHO   = "FF0000"
@@ -90,7 +90,6 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
             nonlocal linha
             if not dados:
                 return
-            # Cabeçalho
             for ci, col in enumerate(cols, 1):
                 c = ws_ano.cell(row=linha, column=ci, value=col)
                 c.fill = _fill(fill_header)
@@ -98,7 +97,6 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
                 c.alignment = _align()
             ws_ano.row_dimensions[linha].height = 28
             linha += 1
-            # Dados
             for ri, row_dict in enumerate(dados):
                 for ci, col in enumerate(cols, 1):
                     val = row_dict.get(col, '')
@@ -107,10 +105,8 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
                         ws_ano.cell(row=linha, column=ci).fill = _fill(fill_zebra)
                 linha += 1
 
-        # Bloco ORIGEM
         escrever_bloco(orig, AZUL, CINZA)
 
-        # Linha vermelha separadora
         for ci in range(1, len(cols)+1):
             c = ws_ano.cell(row=linha, column=ci)
             c.fill = _fill(VERMELHO)
@@ -120,10 +116,8 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
         ws_ano.row_dimensions[linha].height = 18
         linha += 1
 
-        # Bloco DESTINO
         escrever_bloco(dest, VERM_ESC, "FFF0F0")
 
-        # Largura das colunas
         for ci, col in enumerate(cols, 1):
             letra = get_column_letter(ci)
             tam = min(max(len(str(col)), 10) + 2, 40)
@@ -152,7 +146,6 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
 
     elementos = []
 
-    # Período e gerado por
     periodo = f"{data_ini or 'início'} a {data_fim or 'hoje'}"
     elementos.append(Paragraph(
         f"<b>Relatório de Auditoria de Acessos</b>",
@@ -165,7 +158,6 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
                        alignment=TA_CENTER, spaceAfter=12)
     ))
 
-    # Tabela
     cabecalho = [
         "Data/Hora", "Usuário", "Órgão", "IP",
         "Localidade", "CPF/CNPJ\npesquisado", "Nome\npesquisado"
@@ -200,7 +192,6 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
     ]))
     elementos.append(tabela)
 
-    # Cabeçalho fixo com brasão + título + logo ADEPARÁ
     brasao_path  = str(STATIC / 'brasao_para.png')
     adepara_path = str(STATIC / 'adepara_logo.png')
 
@@ -208,27 +199,22 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
         canvas.saveState()
         w, h = landscape(A4)
 
-        # Brasão esquerdo
         if os.path.exists(brasao_path):
             canvas.drawImage(brasao_path, 1.5*cm, h-3*cm, width=2*cm, height=2*cm,
                              preserveAspectRatio=True, mask='auto')
 
-        # Logo ADEPARÁ direito
         if os.path.exists(adepara_path):
             canvas.drawImage(adepara_path, w-4*cm, h-3*cm, width=3*cm, height=2*cm,
                              preserveAspectRatio=True, mask='auto')
 
-        # Título centralizado
         canvas.setFont("Helvetica-Bold", 11)
         canvas.setFillColor(cor_azul)
         canvas.drawCentredString(w/2, h-1.5*cm, "AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ")
 
-        # Linha separadora
         canvas.setStrokeColor(cor_azul)
         canvas.setLineWidth(0.5)
         canvas.line(1.5*cm, h-3.2*cm, w-1.5*cm, h-3.2*cm)
 
-        # Rodapé
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.grey)
         canvas.drawCentredString(w/2, 0.8*cm,
