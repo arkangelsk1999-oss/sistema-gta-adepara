@@ -74,7 +74,6 @@ def login():
             session['usuario_email'] = user['email']
             session['usuario_orgao'] = user['orgao']
             session['nivel']         = user['nivel']
-            # Atualizar último acesso
             conn = get_conn()
             conn.execute("UPDATE usuarios SET ultimo_acesso=? WHERE id=?",
                          (datetime.now().isoformat(), user['id']))
@@ -113,7 +112,6 @@ def buscar():
 
     total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
 
-    # Registrar auditoria
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     registrar_auditoria(
         usuario=get_usuario_session(),
@@ -136,7 +134,6 @@ def buscar():
         for ano in anos
     }
 
-    # Guardar resultado na sessão para exportação
     session['ultimo_resultado'] = json.dumps({
         'nome': nome,
         'cpf':  cpf,
@@ -144,7 +141,6 @@ def buscar():
         'resumo': resumo,
     })
 
-    # Preview — primeiras 50 linhas de cada ano
     preview = {}
     for ano in anos:
         orig = resultado[ano]['origem'][:25]
@@ -272,7 +268,6 @@ def novo_usuario():
     if not all([nome, cpf, email, orgao, senha]):
         return jsonify({'erro': 'Preencha todos os campos'}), 400
 
-    # Não pode criar founder
     if nivel == 'founder' and session.get('nivel') != 'founder':
         return jsonify({'erro': 'Sem permissão'}), 403
 
@@ -383,6 +378,7 @@ def status_job(job_id):
     return jsonify(status_importacao.get(job_id, {'status': 'desconhecido'}))
 
 # ── Inicialização ─────────────────────────────────────────────
+init_db()
+
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000) 
