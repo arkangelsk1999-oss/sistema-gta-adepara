@@ -1,0 +1,6 @@
+banco_gta.db
+uploads_temp/
+__pycache__/
+*.pyc
+.env
+*.db
