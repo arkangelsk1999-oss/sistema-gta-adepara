@@ -4,7 +4,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
@@ -135,20 +135,19 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
-        pagesize=landscape(A4),
+        pagesize=A4,
         leftMargin=1.5*cm, rightMargin=1.5*cm,
-        topMargin=3.5*cm, bottomMargin=1.5*cm
+        topMargin=4*cm, bottomMargin=1.5*cm
     )
 
     styles  = getSampleStyleSheet()
     cor_azul = colors.HexColor('#1A5276')
-    cor_verm = colors.HexColor('#FF0000')
 
     elementos = []
 
     periodo = f"{data_ini or 'início'} a {data_fim or 'hoje'}"
     elementos.append(Paragraph(
-        f"<b>Relatório de Auditoria de Acessos</b>",
+        "<b>Relatório de Auditoria de Acessos</b>",
         ParagraphStyle('titulo', fontSize=13, textColor=cor_azul,
                        alignment=TA_CENTER, spaceAfter=4)
     ))
@@ -174,21 +173,21 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
             r.get('nome_pesquisado',''),
         ])
 
-    col_widths = [3.5*cm, 5*cm, 4*cm, 3.2*cm, 3*cm, 3.8*cm, 5.5*cm]
+    col_widths = [2.8*cm, 4*cm, 3*cm, 2.5*cm, 2.5*cm, 3*cm, 4.2*cm]
 
     tabela = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     tabela.setStyle(TableStyle([
-        ('BACKGROUND',   (0,0), (-1,0), cor_azul),
-        ('TEXTCOLOR',    (0,0), (-1,0), colors.white),
-        ('FONTNAME',     (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',     (0,0), (-1,0), 8),
-        ('ALIGN',        (0,0), (-1,0), 'CENTER'),
-        ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE',     (0,1), (-1,-1), 7.5),
+        ('BACKGROUND',    (0,0), (-1,0), cor_azul),
+        ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
+        ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0,0), (-1,0), 8),
+        ('ALIGN',         (0,0), (-1,0), 'CENTER'),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('FONTSIZE',      (0,1), (-1,-1), 7),
         ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, colors.HexColor('#F2F2F2')]),
-        ('GRID',         (0,0), (-1,-1), 0.3, colors.HexColor('#CCCCCC')),
-        ('TOPPADDING',   (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING',(0,0), (-1,-1), 4),
+        ('GRID',          (0,0), (-1,-1), 0.3, colors.HexColor('#CCCCCC')),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
     elementos.append(tabela)
 
@@ -197,23 +196,23 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
 
     def header(canvas, doc):
         canvas.saveState()
-        w, h = landscape(A4)
+        w, h = A4
 
         if os.path.exists(brasao_path):
-            canvas.drawImage(brasao_path, 1.5*cm, h-3*cm, width=2*cm, height=2*cm,
+            canvas.drawImage(brasao_path, 1.5*cm, h-3.5*cm, width=2*cm, height=2.5*cm,
                              preserveAspectRatio=True, mask='auto')
 
         if os.path.exists(adepara_path):
-            canvas.drawImage(adepara_path, w-4*cm, h-3*cm, width=3*cm, height=2*cm,
+            canvas.drawImage(adepara_path, w-4.5*cm, h-3.5*cm, width=3*cm, height=2*cm,
                              preserveAspectRatio=True, mask='auto')
 
-        canvas.setFont("Helvetica-Bold", 11)
+        canvas.setFont("Helvetica-Bold", 10)
         canvas.setFillColor(cor_azul)
         canvas.drawCentredString(w/2, h-1.5*cm, "AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ")
 
         canvas.setStrokeColor(cor_azul)
         canvas.setLineWidth(0.5)
-        canvas.line(1.5*cm, h-3.2*cm, w-1.5*cm, h-3.2*cm)
+        canvas.line(1.5*cm, h-3.7*cm, w-1.5*cm, h-3.7*cm)
 
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.grey)
