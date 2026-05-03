@@ -42,4 +42,41 @@ input:focus { outline: none; border-color: #1a5276; }
 }
 .rodape-login img.ark { height: 28px; opacity: 0.5; margin-top: 8px; filter: invert(1); }
 
-.adepara-logo { he
+.adepara-logo { height: 40px; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="login-box">
+  <div class="cabecalho-login">
+    <div class="titulo-orgao">AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ</div>
+    <img src="/adepara_logo.png" class="adepara-logo" alt="ADEPARÁ"
+         onerror="this.style.display='none'">
+    <div class="subtitulo" style="margin-top:12px;">Sistema de Consulta de GTAs</div>
+  </div>
+
+  {% if erro %}
+  <div class="erro">{{ erro }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <div class="form-group">
+      <label>E-mail de acesso</label>
+      <input type="email" name="email" placeholder="seu@email.gov.br" required autofocus>
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" name="senha" placeholder="••••••••" required>
+    </div>
+    <button type="submit" class="btn-entrar">Entrar</button>
+  </form>
+
+  <div class="rodape-login">
+    Acesso restrito a usuários autorizados<br>
+    <img src="/arkangelsk_logo.png" class="ark" alt="Arkangelsk"
+         onerror="this.style.display='none'">
+  </div>
+</div>
+
+</body>
+</html>
