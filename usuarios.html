@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block title %}Usuários{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>👥 Gerenciamento de Usuários</h2>
+  <button class="btn btn-azul" onclick="abrirModal()">+ Novo usuário</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th><th>CPF</th><th>E-mail</th><th>Órgão</th>
+          <th>Nível</th><th>Último acesso</th><th>Status</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr id="tr-{{ u.id }}">
+          <td>{{ u.nome }}</td>
+          <td>{{ u.cpf }}</td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.orgao }}</td>
+          <td><span class="badge badge-{{ u.nivel }}">{{ u.nivel|upper }}</span></td>
+          <td>{{ u.ultimo_acesso[:16] if u.ultimo_acesso else '—' }}</td>
+          <td>
+            <span class="badge {{ 'badge-ativo' if u.ativo else 'badge-inativo' }}" id="badge-{{ u.id }}">
+              {{ 'Ativo' if u.ativo else 'Inativo' }}
+            </span>
+          </td>
+          <td>
+            {% if u.nivel != 'founder' %}
+            <button class="btn btn-cinza" style="padding:4px 10px;font-size:11px"
+                    onclick="toggleUsuario({{ u.id }})">
+              {{ 'Desativar' if u.ativo else 'Ativar' }}
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal novo usuário -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:8px;padding:28px;width:100%;max-width:480px;margin:20px;">
+    <h3 style="margin-bottom:16px;color:#1a5276;">Novo usuário</h3>
+    <div id="erro-modal" class="alerta alerta-erro" style="display:none;margin-bottom:12px;"></div>
+    <div class="form-row col2">
+      <div>
+        <label>Nome completo *</label>
+        <input type="text" id="m-nome" placeholder="Nome do servidor">
+      </div>
+      <div>
+        <label>CPF *</label>
+        <input type="text" id="m-cpf" placeholder="Somente números">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>E-mail *</label>
+        <input type="email" id="m-email" placeholder="email@orgao.gov.br">
+      </div>
+    </div>
+    <div class="form-row col2">
+      <div>
+        <label>Órgão *</label>
+        <select id="m-orgao">
+          <option value="">Selecione...</option>
+          <option>ADEPARÁ</option>
+          <option>Ministério Público Federal</option>
+          <option>Ministério Público do Estado do Pará</option>
+          <option>Polícia Federal</option>
+          <option>Polícia Civil do Pará</option>
+          <option>IBAMA</option>
+          <option>ICMBio</option>
+          <option>Outro</option>
+        </select>
+      </div>
+      <div>
+        <label>Nível de acesso *</label>
+        <select id="m-nivel">
+          <option value="usuario">Usuário</option>
+          {% if usuario.nivel == 'founder' %}
+          <option value="master">Master</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row col2">
+      <div>
+        <label>Senha inicial *</label>
+        <input type="password" id="m-senha" placeholder="Mínimo 8 caracteres">
+      </div>
+      <div>
+        <label>Confirmar senha *</label>
+        <input type="password" id="m-senha2" placeholder="Repita a senha">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-azul" style="flex:1" onclick="salvarUsuario()">Salvar</button>
+      <button class="btn btn-cinza" style="flex:1" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function abrirModal() {
+  document.getElementById('modal').style.display = 'flex';
+}
+function fecharModal() {
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('erro-modal').style.display = 'none';
+}
+
+async function salvarUsuario() {
+  const nome   = document.getElementById('m-nome').value.trim();
+  const cpf    = document.getElementById('m-cpf').value.trim();
+  const email  = document.getElementById('m-email').value.trim();
+  const orgao  = document.getElementById('m-orgao').value;
+  const nivel  = document.getElementById('m-nivel').value;
+  const senha  = document.getElementById('m-senha').value;
+  const senha2 = document.getElementById('m-senha2').value;
+
+  const erroEl = document.getElementById('erro-modal');
+  if (senha !== senha2) {
+    erroEl.textContent = 'As senhas não coincidem.';
+    erroEl.style.display = 'block';
+    return;
+  }
+  if (senha.length < 8) {
+    erroEl.textContent = 'A senha deve ter ao menos 8 caracteres.';
+    erroEl.style.display = 'block';
+    return;
+  }
+
+  const resp = await fetch('/usuarios/novo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nome, cpf, email, orgao, nivel, senha })
+  });
+  const data = await resp.json();
+  if (data.erro) {
+    erroEl.textContent = data.erro;
+    erroEl.style.display = 'block';
+  } else {
+    location.reload();
+  }
+}
+
+async function toggleUsuario(uid) {
+  const resp = await fetch(`/usuarios/${uid}/toggle`, { method: 'POST' });
+  const data = await resp.json();
+  const badge = document.getElementById('badge-' + uid);
+  badge.textContent = data.ativo ? 'Ativo' : 'Inativo';
+  badge.className   = 'badge ' + (data.ativo ? 'badge-ativo' : 'badge-inativo');
+}
+</script>
+{% endblock %}

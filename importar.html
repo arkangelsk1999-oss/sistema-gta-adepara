@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Importar Dados{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>📂 Importar planilhas GTA</h2>
+  <div class="alerta alerta-info" style="margin-bottom:14px;">
+    Envie arquivos CSV ou XLSX. O sistema detecta automaticamente o formato e ignora arquivos já importados.
+  </div>
+
+  <div id="drop-zone" style="border:2px dashed #aac;border-radius:6px;padding:32px;text-align:center;cursor:pointer;transition:background 0.2s;"
+       onclick="document.getElementById('file-input').click()"
+       ondragover="event.preventDefault();this.style.background='#eef'"
+       ondragleave="this.style.background=''"
+       ondrop="handleDrop(event)">
+    <div style="font-size:36px;margin-bottom:8px;">📁</div>
+    <strong>Clique ou arraste o arquivo aqui</strong><br>
+    <span style="font-size:12px;color:#888;">CSV ou XLSX — um arquivo por vez</span>
+  </div>
+  <input type="file" id="file-input" accept=".csv,.xlsx" style="display:none" onchange="uploadArquivo(this.files[0])">
+
+  <div id="area-progresso" style="display:none;margin-top:14px;">
+    <div id="msg-progresso" style="font-size:13px;color:#555;margin-bottom:6px;"></div>
+    <div class="progress-wrap"><div class="progress-bar" id="barra" style="width:0%"></div></div>
+  </div>
+  <div id="msg-resultado" style="margin-top:12px;font-size:13px;"></div>
+</div>
+
+<div class="card">
+  <h2>📋 Arquivos já importados</h2>
+  {% if importados %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Arquivo</th><th>Ano</th><th>Linhas</th><th>Importado em</th></tr>
+      </thead>
+      <tbody>
+        {% for a in importados %}
+        <tr>
+          <td>{{ a.nome_arquivo }}</td>
+          <td>{{ a.ano or '—' }}</td>
+          <td>{{ '{:,}'.format(a.linhas).replace(',','.') if a.linhas else '—' }}</td>
+          <td>{{ a.importado_em[:16] if a.importado_em else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#aaa;font-size:13px;">Nenhum arquivo importado ainda.</p>
+  {% endif %}
+</div>
+
+<script>
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').style.background = '';
+  const f = e.dataTransfer.files[0];
+  if (f) uploadArquivo(f);
+}
+
+async function uploadArquivo(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xlsx'].includes(ext)) {
+    mostrarMsg('❌ Formato não suportado. Use CSV ou XLSX.', 'erro');
+    return;
+  }
+
+  document.getElementById('area-progresso').style.display = 'block';
+  document.getElementById('msg-resultado').innerHTML = '';
+  setProgresso(10, 'Enviando arquivo...');
+
+  const fd = new FormData();
+  fd.append('arquivo', file);
+
+  const resp = await fetch('/importar/upload', { method: 'POST', body: fd });
+  const data = await resp.json();
+
+  if (data.erro) {
+    mostrarMsg('❌ ' + data.erro, 'erro');
+    document.getElementById('area-progresso').style.display = 'none';
+    return;
+  }
+
+  setProgresso(30, 'Processando...');
+  // Polling do status
+  const jobId = data.job_id;
+  const poll  = setInterval(async () => {
+    const sr = await fetch('/importar/status/' + encodeURIComponent(jobId));
+    const st = await sr.json();
+    setProgresso(st.progresso || 50, st.msg || '');
+    if (st.status === 'concluido') {
+      clearInterval(poll);
+      setProgresso(100, st.msg);
+      mostrarMsg(st.msg, 'ok');
+      setTimeout(() => location.reload(), 2000);
+    } else if (st.status === 'erro') {
+      clearInterval(poll);
+      mostrarMsg(st.msg, 'erro');
+      document.getElementById('area-progresso').style.display = 'none';
+    }
+  }, 1500);
+}
+
+function setProgresso(v, msg) {
+  document.getElementById('barra').style.width = v + '%';
+  document.getElementById('msg-progresso').textContent = msg;
+}
+
+function mostrarMsg(msg, tipo) {
+  const el = document.getElementById('msg-resultado');
+  el.innerHTML = `<div class="alerta alerta-${tipo === 'ok' ? 'ok' : tipo === 'erro' ? 'erro' : 'info'}">${msg}</div>`;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Auditoria{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>📋 Relatório de Auditoria de Acessos</h2>
+  <div class="form-row col4">
+    <div>
+      <label>Data início</label>
+      <input type="date" id="data-ini">
+    </div>
+    <div>
+      <label>Data fim</label>
+      <input type="date" id="data-fim">
+    </div>
+    <div>
+      <label>Usuário ou e-mail</label>
+      <input type="text" id="filtro-usuario" placeholder="Filtrar por usuário">
+    </div>
+    <div style="align-self:end;display:flex;gap:8px;">
+      <button class="btn btn-azul" style="flex:1" onclick="carregar()">🔍 Filtrar</button>
+      <button class="btn btn-vermelho" style="flex:1" onclick="gerarPDF()">📄 PDF</button>
+    </div>
+  </div>
+  <div id="status-audit" style="font-size:13px;color:#666;min-height:18px;"></div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h2 style="margin:0;border:none;padding:0">Registros</h2>
+    <span id="total-audit" style="font-size:12px;color:#888;"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Data/Hora</th>
+          <th>Usuário</th>
+          <th>Órgão</th>
+          <th>IP</th>
+          <th>Localidade</th>
+          <th>CPF/CNPJ pesquisado</th>
+          <th>Nome pesquisado</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-audit">
+        <tr><td colspan="7" style="text-align:center;color:#aaa;padding:24px;">Use os filtros acima para carregar os registros.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function carregar() {
+  const ini = document.getElementById('data-ini').value;
+  const fim = document.getElementById('data-fim').value;
+  const usr = document.getElementById('filtro-usuario').value;
+
+  document.getElementById('status-audit').innerHTML = '<span class="spinner"></span> Carregando...';
+
+  const params = new URLSearchParams({ data_ini: ini, data_fim: fim, usuario: usr });
+  const resp   = await fetch('/auditoria/dados?' + params);
+  const rows   = await resp.json();
+
+  document.getElementById('total-audit').textContent = rows.length + ' registros';
+  document.getElementById('status-audit').textContent = '';
+
+  const tbody = document.getElementById('tbody-audit');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:24px;">Nenhum registro encontrado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td style="white-space:nowrap">${r.data_hora||''}</td>
+      <td>${r.usuario_nome||''}</td>
+      <td>${r.orgao||''}</td>
+      <td>${r.ip||''}</td>
+      <td>${r.localidade||''}</td>
+      <td>${r.cpf_cnpj_pesquisado||''}</td>
+      <td>${r.nome_pesquisado||''}</td>
+    </tr>
+  `).join('');
+}
+
+function gerarPDF() {
+  const ini = document.getElementById('data-ini').value;
+  const fim = document.getElementById('data-fim').value;
+  const usr = document.getElementById('filtro-usuario').value;
+  const params = new URLSearchParams({ data_ini: ini, data_fim: fim, usuario: usr });
+  window.open('/auditoria/pdf?' + params, '_blank');
+}
+</script>
+{% endblock %}
