@@ -94,11 +94,17 @@
     <div class="form-row col2">
       <div>
         <label>Senha inicial *</label>
-        <input type="password" id="m-senha" placeholder="Mínimo 8 caracteres">
+        <div style="position:relative;">
+          <input type="password" id="m-senha" placeholder="Mínimo 8 caracteres" style="padding-right:36px;">
+          <span onclick="toggleSenha('m-senha', this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;">👁️</span>
+        </div>
       </div>
       <div>
         <label>Confirmar senha *</label>
-        <input type="password" id="m-senha2" placeholder="Repita a senha">
+        <div style="position:relative;">
+          <input type="password" id="m-senha2" placeholder="Repita a senha" style="padding-right:36px;">
+          <span onclick="toggleSenha('m-senha2', this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;">👁️</span>
+        </div>
       </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:8px;">
@@ -109,6 +115,17 @@
 </div>
 
 <script>
+function toggleSenha(id, el) {
+  const input = document.getElementById(id);
+  if (input.type === 'password') {
+    input.type = 'text';
+    el.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    el.textContent = '👁️';
+  }
+}
+
 function formatarCPF(input) {
   let v = input.value.replace(/\D/g, '');
   if (v.length > 11) v = v.slice(0, 11);
