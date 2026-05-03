@@ -173,21 +173,22 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
             r.get('nome_pesquisado',''),
         ])
 
-    col_widths = [2.8*cm, 4*cm, 3*cm, 2.5*cm, 2.5*cm, 3*cm, 4.2*cm]
+    # Total = 18cm (A4 retrato - margens)
+    col_widths = [2.8*cm, 3.5*cm, 2.8*cm, 2.2*cm, 2.2*cm, 2.5*cm, 4.0*cm]
 
     tabela = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
     tabela.setStyle(TableStyle([
         ('BACKGROUND',    (0,0), (-1,0), cor_azul),
         ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
         ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',      (0,0), (-1,0), 8),
+        ('FONTSIZE',      (0,0), (-1,0), 7),
         ('ALIGN',         (0,0), (-1,0), 'CENTER'),
         ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE',      (0,1), (-1,-1), 7),
+        ('FONTSIZE',      (0,1), (-1,-1), 6.5),
         ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, colors.HexColor('#F2F2F2')]),
         ('GRID',          (0,0), (-1,-1), 0.3, colors.HexColor('#CCCCCC')),
-        ('TOPPADDING',    (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING',    (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
     ]))
     elementos.append(tabela)
 
