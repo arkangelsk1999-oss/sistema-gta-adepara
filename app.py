@@ -13,7 +13,9 @@ from database import (
 )
 from relatorio import gerar_excel_resultado, gerar_pdf_auditoria
 
-app = Flask(__name__)
+app = Flask(__name__, 
+            template_folder='.', 
+            static_folder='.')
 app.secret_key = os.environ.get('SECRET_KEY', 'arkangelsk-2025-chave-secreta')
 
 UPLOAD_FOLDER = Path(__file__).parent / 'uploads_temp'
