@@ -23,7 +23,6 @@ UPLOAD_FOLDER = Path(__file__).parent / 'uploads_temp'
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 
-# ── Decoradores de acesso ─────────────────────────────────────
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -55,7 +54,6 @@ def extrair_ano(nome):
     m = re.search(r'20\d{2}', nome)
     return int(m.group()) if m else 9999
 
-# ── Rotas públicas ────────────────────────────────────────────
 @app.route('/login', methods=['GET','POST'])
 def login():
     erro = None
@@ -89,7 +87,6 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ── Página principal — consulta ───────────────────────────────
 @app.route('/')
 @login_required
 def index():
@@ -106,61 +103,64 @@ def buscar():
     if not nome and not cpf:
         return jsonify({'erro': 'Informe nome ou CPF/CNPJ'}), 400
 
-    resultado = buscar_gtas(nome=nome, cpf=cpf,
-                             ano_ini=ano_ini or None,
-                             ano_fim=ano_fim or None)
+    try:
+        resultado = buscar_gtas(nome=nome, cpf=cpf,
+                                ano_ini=ano_ini or None,
+                                ano_fim=ano_fim or None)
 
-    total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
+        total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
 
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    registrar_auditoria(
-        usuario=get_usuario_session(),
-        ip=ip,
-        localidade='',
-        cpf_pesquisado=norm_cpf(cpf),
-        nome_pesquisado=nome.upper(),
-        total=total
-    )
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        registrar_auditoria(
+            usuario=get_usuario_session(),
+            ip=ip,
+            localidade='',
+            cpf_pesquisado=norm_cpf(cpf),
+            nome_pesquisado=nome.upper(),
+            total=total
+        )
 
-    if not resultado:
-        return jsonify({'vazio': True, 'total': 0})
+        if not resultado:
+            return jsonify({'vazio': True, 'total': 0})
 
-    anos = sorted(resultado.keys())
-    resumo = {
-        str(ano): {
-            'origem':  len(resultado[ano]['origem']),
-            'destino': len(resultado[ano]['destino']),
-        }
-        for ano in anos
-    }
-
-    session['ultimo_resultado'] = json.dumps({
-        'nome': nome,
-        'cpf':  cpf,
-        'anos': anos,
-        'resumo': resumo,
-    })
-
-    preview = {}
-    for ano in anos:
-        orig = resultado[ano]['origem'][:25]
-        dest = resultado[ano]['destino'][:25]
-        cols = resultado[ano]['colunas']
-        preview[str(ano)] = {
-            'colunas': cols,
-            'origem':  orig,
-            'destino': dest,
+        anos = sorted(resultado.keys())
+        resumo = {
+            str(ano): {
+                'origem':  len(resultado[ano]['origem']),
+                'destino': len(resultado[ano]['destino']),
+            }
+            for ano in anos
         }
 
-    return jsonify({
-        'total':   total,
-        'anos':    [str(a) for a in anos],
-        'resumo':  resumo,
-        'preview': preview,
-        'nome_encontrado': nome or cpf,
-    })
+        session['ultimo_resultado'] = json.dumps({
+            'nome': nome,
+            'cpf':  cpf,
+        })
 
-# ── Exportação Excel ──────────────────────────────────────────
+        preview = {}
+        for ano in anos:
+            orig = resultado[ano]['origem'][:10]
+            dest = resultado[ano]['destino'][:10]
+            cols = resultado[ano]['colunas']
+            preview[str(ano)] = {
+                'colunas': cols,
+                'origem':  orig,
+                'destino': dest,
+            }
+
+        return jsonify({
+            'total':   total,
+            'anos':    [str(a) for a in anos],
+            'resumo':  resumo,
+            'preview': preview,
+            'nome_encontrado': nome or cpf,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
 @app.route('/exportar/excel', methods=['POST'])
 @login_required
 def exportar_excel():
@@ -181,7 +181,6 @@ def exportar_excel():
                      download_name=nome_arquivo,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-# ── Auditoria ─────────────────────────────────────────────────
 @app.route('/auditoria')
 @login_required
 @nivel_required('founder', 'master')
@@ -241,7 +240,6 @@ def auditoria_pdf():
                      download_name=f"auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                      mimetype='application/pdf')
 
-# ── Gestão de usuários ────────────────────────────────────────
 @app.route('/usuarios')
 @login_required
 @nivel_required('founder', 'master')
@@ -298,7 +296,6 @@ def toggle_usuario(uid):
     conn.close()
     return jsonify({'ativo': novo})
 
-# ── Upload e importação ───────────────────────────────────────
 @app.route('/importar')
 @login_required
 @nivel_required('founder', 'master')
@@ -377,8 +374,7 @@ def upload_arquivo():
 def status_job(job_id):
     return jsonify(status_importacao.get(job_id, {'status': 'desconhecido'}))
 
-# ── Inicialização ─────────────────────────────────────────────
 init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=True, host='0.0.0.0', port=5000)

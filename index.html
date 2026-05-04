@@ -50,7 +50,6 @@
     </div>
     <div class="metrics" id="metrics"></div>
   </div>
-
   <div id="abas-container"></div>
 </div>
 
@@ -93,19 +92,36 @@ async function buscar() {
   fd.append('ano_ini', anoIni);
   fd.append('ano_fim', anoFim);
 
-  // Timeout de 5 minutos
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000);
 
+  let resp, data;
+
   try {
-    const resp = await fetch('/buscar', {
+    resp = await fetch('/buscar', {
       method: 'POST',
       body: fd,
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    const data = await resp.json();
+  } catch(e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      setStatus('❌ Tempo limite excedido. Tente filtrar por ano.', 'erro');
+    } else {
+      setStatus('❌ Falha na conexão com o servidor: ' + e.message, 'erro');
+    }
+    return;
+  }
 
+  try {
+    data = await resp.json();
+  } catch(e) {
+    setStatus('❌ Erro ao processar resposta do servidor: ' + e.message, 'erro');
+    return;
+  }
+
+  try {
     if (data.erro) { setStatus('❌ ' + data.erro, 'erro'); return; }
     if (data.vazio) {
       setStatus('');
@@ -119,12 +135,7 @@ async function buscar() {
     document.getElementById('btn-exportar').style.display = 'block';
 
   } catch(e) {
-    clearTimeout(timeoutId);
-    if (e.name === 'AbortError') {
-      setStatus('❌ Tempo limite excedido. Tente filtrar por ano para reduzir os resultados.', 'erro');
-    } else {
-      setStatus('❌ Erro na comunicação com o servidor.', 'erro');
-    }
+    setStatus('❌ Erro ao renderizar resultado: ' + e.message, 'erro');
   }
 }
 

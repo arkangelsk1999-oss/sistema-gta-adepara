@@ -1,4 +1,4 @@
-import sqlite3, os, re, json
+import sqlite3, os, re, json, math
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "banco_gta.db"
@@ -32,7 +32,6 @@ def init_db():
     conn = get_conn()
     c = conn.cursor()
 
-    # Tabela de usuários
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
@@ -46,7 +45,6 @@ def init_db():
         ultimo_acesso TEXT
     )''')
 
-    # Tabela de GTAs
     c.execute('''CREATE TABLE IF NOT EXISTS gtas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ano INTEGER NOT NULL,
@@ -58,12 +56,10 @@ def init_db():
         dados_json TEXT NOT NULL
     )''')
 
-    # Índices normais (CPF e ano continuam usando estes)
     c.execute('CREATE INDEX IF NOT EXISTS idx_orig_cpf  ON gtas(orig_cpf)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_dest_cpf  ON gtas(dest_cpf)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_ano       ON gtas(ano)')
 
-    # Tabela FTS5 para busca por nome
     c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS gtas_fts
         USING fts5(
             orig_nome,
@@ -74,7 +70,6 @@ def init_db():
         )
     ''')
 
-    # Triggers para manter FTS5 sincronizado automaticamente
     c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ai
         AFTER INSERT ON gtas BEGIN
             INSERT INTO gtas_fts(rowid, orig_nome, dest_nome)
@@ -96,7 +91,6 @@ def init_db():
         END
     ''')
 
-    # Tabela de arquivos já importados
     c.execute('''CREATE TABLE IF NOT EXISTS arquivos_importados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome_arquivo TEXT NOT NULL UNIQUE,
@@ -105,7 +99,6 @@ def init_db():
         importado_em TEXT NOT NULL
     )''')
 
-    # Tabela de auditoria
     c.execute('''CREATE TABLE IF NOT EXISTS auditoria (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_hora TEXT NOT NULL,
@@ -120,7 +113,6 @@ def init_db():
         total_resultados INTEGER
     )''')
 
-    # Founder padrão
     from werkzeug.security import generate_password_hash
     from datetime import datetime
     existe = c.execute("SELECT id FROM usuarios WHERE nivel='founder'").fetchone()
@@ -143,14 +135,10 @@ def init_db():
 
 
 def migrar_fts():
-    """
-    Roda UMA VEZ para popular o FTS5 com os dados já existentes no banco.
-    Execute no terminal: python -c "from database import migrar_fts; migrar_fts()"
-    """
     conn = get_conn()
     c = conn.cursor()
     print("Verificando se migração FTS já foi feita...")
-    total_fts = c.execute("SELECT COUNT(*) FROM gtas_fts").fetchone()[0]
+    total_fts  = c.execute("SELECT COUNT(*) FROM gtas_fts").fetchone()[0]
     total_gtas = c.execute("SELECT COUNT(*) FROM gtas").fetchone()[0]
 
     if total_fts >= total_gtas:
@@ -218,12 +206,11 @@ def importar_dataframe(df, ano, nome_arquivo):
     return len(df)
 
 
+def _limpar_nan(dados):
+    return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in dados.items()}
+
+
 def _fts_query(nome):
-    """
-    Converte nome digitado em query FTS5 segura.
-    Ex: "JOSE DA SILVA" → '"JOSE" AND "DA" AND "SILVA"'
-    Termos curtos (≤2 chars) são ignorados (artigos, preposições).
-    """
     tokens = [t for t in nome.upper().split() if len(t) > 2]
     if not tokens:
         return None
@@ -238,7 +225,6 @@ def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
     rows = []
 
     if nome and cpf:
-        # Busca combinada: FTS para nome + índice para CPF
         fts_q = _fts_query(nome)
         if fts_q:
             sql = """
@@ -284,7 +270,7 @@ def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
     resultado = {}
     for row in rows:
         ano   = row['ano']
-        dados = json.loads(row['dados_json'])
+        dados = _limpar_nan(json.loads(row['dados_json']))
         is_orig = (nome and nome in (row['orig_nome'] or '')) or (cpf and cpf == row['orig_cpf'])
         is_dest = (nome and nome in (row['dest_nome'] or '')) or (cpf and cpf == row['dest_cpf'])
 
