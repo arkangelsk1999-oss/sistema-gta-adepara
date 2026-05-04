@@ -3,7 +3,6 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "banco_gta.db"
 
-# ── Detectar colunas de busca automaticamente ─────────────────
 PADROES_ORIG_CPF  = ['cpf ou cnpj do produtor de origem', 'origem_identificacao']
 PADROES_DEST_CPF  = ['cpf ou cnpj do produtor de destino', 'destinatario_identificacao']
 PADROES_ORIG_NOME = ['nome do produtor de origem', 'origem_nome']
@@ -47,7 +46,7 @@ def init_db():
         ultimo_acesso TEXT
     )''')
 
-    # Tabela de GTAs — linha completa como JSON + campos indexados
+    # Tabela de GTAs
     c.execute('''CREATE TABLE IF NOT EXISTS gtas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ano INTEGER NOT NULL,
@@ -59,12 +58,43 @@ def init_db():
         dados_json TEXT NOT NULL
     )''')
 
-    # Índices de busca
+    # Índices normais (CPF e ano continuam usando estes)
     c.execute('CREATE INDEX IF NOT EXISTS idx_orig_cpf  ON gtas(orig_cpf)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_dest_cpf  ON gtas(dest_cpf)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_orig_nome ON gtas(orig_nome)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_dest_nome ON gtas(dest_nome)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_ano       ON gtas(ano)')
+
+    # Tabela FTS5 para busca por nome
+    c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS gtas_fts
+        USING fts5(
+            orig_nome,
+            dest_nome,
+            content='gtas',
+            content_rowid='id',
+            tokenize='unicode61 remove_diacritics 1'
+        )
+    ''')
+
+    # Triggers para manter FTS5 sincronizado automaticamente
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ai
+        AFTER INSERT ON gtas BEGIN
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome);
+        END
+    ''')
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ad
+        AFTER DELETE ON gtas BEGIN
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome);
+        END
+    ''')
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_au
+        AFTER UPDATE ON gtas BEGIN
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome);
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome);
+        END
+    ''')
 
     # Tabela de arquivos já importados
     c.execute('''CREATE TABLE IF NOT EXISTS arquivos_importados (
@@ -90,7 +120,7 @@ def init_db():
         total_resultados INTEGER
     )''')
 
-    # Founder padrão — criado só se não existir
+    # Founder padrão
     from werkzeug.security import generate_password_hash
     from datetime import datetime
     existe = c.execute("SELECT id FROM usuarios WHERE nivel='founder'").fetchone()
@@ -99,7 +129,7 @@ def init_db():
             (nome, cpf, email, senha_hash, orgao, nivel, ativo, criado_em)
             VALUES (?,?,?,?,?,?,?,?)''', (
             'Gilliard Costa Rodrigues',
-            '00000000000',  # CPF real configurado no primeiro acesso
+            '00000000000',
             'founder@arkangelsk.com',
             generate_password_hash('Arkangelsk@2025'),
             'Arkangelsk',
@@ -110,6 +140,30 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def migrar_fts():
+    """
+    Roda UMA VEZ para popular o FTS5 com os dados já existentes no banco.
+    Execute no terminal: python -c "from database import migrar_fts; migrar_fts()"
+    """
+    conn = get_conn()
+    c = conn.cursor()
+    print("Verificando se migração FTS já foi feita...")
+    total_fts = c.execute("SELECT COUNT(*) FROM gtas_fts").fetchone()[0]
+    total_gtas = c.execute("SELECT COUNT(*) FROM gtas").fetchone()[0]
+
+    if total_fts >= total_gtas:
+        print(f"FTS já populado ({total_fts} registros). Nada a fazer.")
+        conn.close()
+        return
+
+    print(f"Populando FTS5 com {total_gtas:,} registros. Aguarde...")
+    c.execute("INSERT INTO gtas_fts(rowid, orig_nome, dest_nome) SELECT id, orig_nome, dest_nome FROM gtas")
+    conn.commit()
+    print("✅ Migração FTS5 concluída!")
+    conn.close()
+
 
 def arquivo_ja_importado(nome):
     conn = get_conn()
@@ -128,7 +182,6 @@ def registrar_arquivo(nome, ano, linhas):
     conn.close()
 
 def importar_dataframe(df, ano, nome_arquivo):
-    import json
     cols = list(df.columns)
     col_orig_cpf  = detectar_col(cols, PADROES_ORIG_CPF)
     col_dest_cpf  = detectar_col(cols, PADROES_DEST_CPF)
@@ -145,7 +198,6 @@ def importar_dataframe(df, ano, nome_arquivo):
         orig_nome = str(row.get(col_orig_nome, '')).upper().strip() if col_orig_nome else ''
         dest_nome = str(row.get(col_dest_nome, '')).upper().strip() if col_dest_nome else ''
         dados     = json.dumps(row.to_dict(), ensure_ascii=False, default=str)
-
         lote.append((ano, nome_arquivo, orig_cpf, orig_nome, dest_cpf, dest_nome, dados))
 
         if len(lote) >= 5000:
@@ -165,46 +217,76 @@ def importar_dataframe(df, ano, nome_arquivo):
     conn.close()
     return len(df)
 
+
+def _fts_query(nome):
+    """
+    Converte nome digitado em query FTS5 segura.
+    Ex: "JOSE DA SILVA" → '"JOSE" AND "DA" AND "SILVA"'
+    Termos curtos (≤2 chars) são ignorados (artigos, preposições).
+    """
+    tokens = [t for t in nome.upper().split() if len(t) > 2]
+    if not tokens:
+        return None
+    return ' AND '.join(f'"{t}"' for t in tokens)
+
+
 def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
-    import json
     conn = get_conn()
     nome = nome.strip().upper()
     cpf  = norm_cpf(cpf)
 
-    condicoes = []
-    params = []
+    rows = []
 
     if nome and cpf:
-        condicoes.append("(orig_nome LIKE ? OR dest_nome LIKE ? OR orig_cpf LIKE ? OR dest_cpf LIKE ?)")
-        params += [f'%{nome}%', f'%{nome}%', f'%{cpf}%', f'%{cpf}%']
+        # Busca combinada: FTS para nome + índice para CPF
+        fts_q = _fts_query(nome)
+        if fts_q:
+            sql = """
+                SELECT g.* FROM gtas g
+                WHERE g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)
+                  AND (g.orig_cpf = ? OR g.dest_cpf = ?)
+            """
+            params = [fts_q, cpf, cpf]
+            if ano_ini: sql += " AND g.ano >= ?"; params.append(int(ano_ini))
+            if ano_fim: sql += " AND g.ano <= ?"; params.append(int(ano_fim))
+            sql += " ORDER BY g.ano"
+            rows = conn.execute(sql, params).fetchall()
+
     elif nome:
-        condicoes.append("(orig_nome LIKE ? OR dest_nome LIKE ?)")
-        params += [f'%{nome}%', f'%{nome}%']
+        fts_q = _fts_query(nome)
+        if not fts_q:
+            conn.close()
+            return {}
+        sql = """
+            SELECT g.* FROM gtas g
+            WHERE g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)
+        """
+        params = [fts_q]
+        if ano_ini: sql += " AND g.ano >= ?"; params.append(int(ano_ini))
+        if ano_fim: sql += " AND g.ano <= ?"; params.append(int(ano_fim))
+        sql += " ORDER BY g.ano"
+        rows = conn.execute(sql, params).fetchall()
+
     elif cpf:
-        condicoes.append("(orig_cpf LIKE ? OR dest_cpf LIKE ?)")
-        params += [f'%{cpf}%', f'%{cpf}%']
+        sql = "SELECT * FROM gtas WHERE (orig_cpf = ? OR dest_cpf = ?)"
+        params = [cpf, cpf]
+        if ano_ini: sql += " AND ano >= ?"; params.append(int(ano_ini))
+        if ano_fim: sql += " AND ano <= ?"; params.append(int(ano_fim))
+        sql += " ORDER BY ano"
+        rows = conn.execute(sql, params).fetchall()
+
     else:
+        conn.close()
         return {}
 
-    if ano_ini:
-        condicoes.append("ano >= ?")
-        params.append(int(ano_ini))
-    if ano_fim:
-        condicoes.append("ano <= ?")
-        params.append(int(ano_fim))
-
-    sql = f"SELECT * FROM gtas WHERE {' AND '.join(condicoes)} ORDER BY ano"
-    rows = conn.execute(sql, params).fetchall()
     conn.close()
 
-    # Organizar por ano, separando origem e destino
     resultado = {}
     for row in rows:
-        ano  = row['ano']
+        ano   = row['ano']
         dados = json.loads(row['dados_json'])
-        # Determinar papel
-        is_orig = (nome and nome in (row['orig_nome'] or '')) or (cpf and cpf in (row['orig_cpf'] or ''))
-        is_dest = (nome and nome in (row['dest_nome'] or '')) or (cpf and cpf in (row['dest_cpf'] or ''))
+        is_orig = (nome and nome in (row['orig_nome'] or '')) or (cpf and cpf == row['orig_cpf'])
+        is_dest = (nome and nome in (row['dest_nome'] or '')) or (cpf and cpf == row['dest_cpf'])
 
         if ano not in resultado:
             resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
@@ -214,6 +296,7 @@ def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
             resultado[ano]['destino'].append(dados)
 
     return resultado
+
 
 def registrar_auditoria(usuario, ip, localidade, cpf_pesquisado, nome_pesquisado, total):
     from datetime import datetime
