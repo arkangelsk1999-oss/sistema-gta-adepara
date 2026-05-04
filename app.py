@@ -11,7 +11,7 @@ from database import (
     init_db, get_conn, buscar_gtas, importar_dataframe,
     arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf
 )
-from relatorio import gerar_excel_resultado, gerar_pdf_auditoria
+from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado
 
 app = Flask(__name__, 
             template_folder='.', 
@@ -180,6 +180,27 @@ def exportar_excel():
     return send_file(buf, as_attachment=True,
                      download_name=nome_arquivo,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/exportar/csv', methods=['POST'])
+@login_required
+@nivel_required('founder')
+def exportar_csv():
+    nome    = request.form.get('nome', '')
+    cpf     = request.form.get('cpf', '')
+    ano_ini = request.form.get('ano_ini', '')
+    ano_fim = request.form.get('ano_fim', '')
+
+    resultado = buscar_gtas(nome=nome, cpf=cpf,
+                             ano_ini=ano_ini or None,
+                             ano_fim=ano_fim or None)
+    if not resultado:
+        return 'Sem resultados', 404
+
+    buf = gerar_csv_resultado(resultado, nome, cpf)
+    nome_arquivo = f"GTA_{(nome or cpf).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
+    return send_file(buf, as_attachment=True,
+                     download_name=nome_arquivo,
+                     mimetype='text/csv')
 
 @app.route('/auditoria')
 @login_required

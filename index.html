@@ -36,6 +36,13 @@
       </button>
     </div>
   </div>
+  {% if usuario.nivel == 'founder' %}
+  <div style="margin-top:8px;">
+    <button class="btn btn-cinza" id="btn-exportar-csv" style="padding:7px 18px;display:none" onclick="exportarCSV()">
+      📄 Exportar CSV (Founder)
+    </button>
+  </div>
+  {% endif %}
   <div id="status-busca" style="font-size:13px;color:#666;min-height:20px;margin-top:4px;"></div>
 </div>
 
@@ -84,6 +91,8 @@ async function buscar() {
   document.getElementById('area-resultado').style.display = 'none';
   document.getElementById('area-vazio').style.display = 'none';
   document.getElementById('btn-exportar').style.display = 'none';
+  const btnCsv = document.getElementById('btn-exportar-csv');
+  if (btnCsv) btnCsv.style.display = 'none';
   setStatus('<span class="spinner"></span> Buscando... (pode demorar alguns minutos para bases grandes)');
 
   const fd = new FormData();
@@ -133,6 +142,7 @@ async function buscar() {
     renderResultado(data);
     setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
     document.getElementById('btn-exportar').style.display = 'block';
+    if (btnCsv) btnCsv.style.display = 'inline-block';
 
   } catch(e) {
     setStatus('❌ Erro ao renderizar resultado: ' + e.message, 'erro');
@@ -217,6 +227,27 @@ function exportar() {
       setStatus('✅ Excel gerado com sucesso.');
     })
     .catch(() => setStatus('❌ Erro ao gerar Excel.', 'erro'));
+}
+
+function exportarCSV() {
+  const fd = new FormData();
+  fd.append('nome',    dadosBusca.nome);
+  fd.append('cpf',     dadosBusca.cpf);
+  fd.append('ano_ini', dadosBusca.ano_ini);
+  fd.append('ano_fim', dadosBusca.ano_fim);
+
+  setStatus('<span class="spinner"></span> Gerando CSV...');
+  fetch('/exportar/csv', { method: 'POST', body: fd })
+    .then(r => r.blob())
+    .then(blob => {
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href  = url;
+      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf).replace(/\s/g,'_').substring(0,30)}.csv`;
+      link.click();
+      setStatus('✅ CSV gerado com sucesso.');
+    })
+    .catch(() => setStatus('❌ Erro ao gerar CSV.', 'erro'));
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });

@@ -1,4 +1,4 @@
-import io, os
+import io, os, csv
 from datetime import datetime
 from pathlib import Path
 from openpyxl import Workbook
@@ -86,7 +86,7 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
         ws_ano = wb.create_sheet(str(ano))
         linha  = 1
 
-        def escrever_bloco(dados, fill_header, fill_zebra, titulo_sep=None):
+        def escrever_bloco(dados, fill_header, fill_zebra):
             nonlocal linha
             if not dados:
                 return
@@ -107,6 +107,7 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
 
         escrever_bloco(orig, AZUL, CINZA)
 
+        # Separador destinatário
         for ci in range(1, len(cols)+1):
             c = ws_ano.cell(row=linha, column=ci)
             c.fill = _fill(VERMELHO)
@@ -118,10 +119,15 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
 
         escrever_bloco(dest, VERM_ESC, "FFF0F0")
 
+        # Largura das colunas
         for ci, col in enumerate(cols, 1):
             letra = get_column_letter(ci)
             tam = min(max(len(str(col)), 10) + 2, 40)
             ws_ano.column_dimensions[letra].width = tam
+
+        # Filtros automáticos na primeira linha
+        ultima_col = get_column_letter(len(cols))
+        ws_ano.auto_filter.ref = f"A1:{ultima_col}1"
 
         ws_ano.freeze_panes = "A2"
 
@@ -129,6 +135,48 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca):
     wb.save(buf)
     buf.seek(0)
     return buf
+
+
+# ── CSV (somente founder) ─────────────────────────────────────
+def gerar_csv_resultado(resultado, nome_busca, cpf_busca):
+    COLS_INTERNAS = {'_ano','_arquivo','_formato'}
+    anos = sorted(resultado.keys())
+
+    buf = io.StringIO()
+    writer = None
+
+    for ano in anos:
+        orig = resultado[ano]['origem']
+        dest = resultado[ano]['destino']
+        cols = [c for c in resultado[ano]['colunas'] if c not in COLS_INTERNAS]
+
+        todos = []
+        for row in orig:
+            r = {c: row.get(c, '') for c in cols}
+            r['__PAPEL__'] = 'REMETENTE'
+            r['__ANO__']   = str(ano)
+            todos.append(r)
+        for row in dest:
+            r = {c: row.get(c, '') for c in cols}
+            r['__PAPEL__'] = 'DESTINATARIO'
+            r['__ANO__']   = str(ano)
+            todos.append(r)
+
+        if not todos:
+            continue
+
+        fieldnames = ['__ANO__', '__PAPEL__'] + cols
+
+        if writer is None:
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=';',
+                                    extrasaction='ignore')
+            writer.writeheader()
+
+        writer.writerows(todos)
+
+    buf.seek(0)
+    return io.BytesIO(buf.getvalue().encode('utf-8-sig'))
+
 
 # ── PDF de Auditoria ──────────────────────────────────────────
 def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
@@ -173,7 +221,6 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
             r.get('nome_pesquisado',''),
         ])
 
-    # Total = 18cm (A4 retrato - margens)
     col_widths = [2.8*cm, 3.5*cm, 2.8*cm, 2.2*cm, 2.2*cm, 2.5*cm, 4.0*cm]
 
     tabela = Table(dados_tabela, colWidths=col_widths, repeatRows=1)
