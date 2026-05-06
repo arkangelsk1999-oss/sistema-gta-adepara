@@ -97,14 +97,15 @@ def index():
 def buscar():
     nome    = request.form.get('nome', '').strip()
     cpf     = request.form.get('cpf', '').strip()
+    emissor = request.form.get('emissor', '').strip()
     ano_ini = request.form.get('ano_ini', '').strip()
     ano_fim = request.form.get('ano_fim', '').strip()
 
-    if not nome and not cpf:
-        return jsonify({'erro': 'Informe nome ou CPF/CNPJ'}), 400
+    if not nome and not cpf and not emissor:
+        return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
 
     try:
-        resultado = buscar_gtas(nome=nome, cpf=cpf,
+        resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                                 ano_ini=ano_ini or None,
                                 ano_fim=ano_fim or None)
 
@@ -116,7 +117,7 @@ def buscar():
             ip=ip,
             localidade='',
             cpf_pesquisado=norm_cpf(cpf),
-            nome_pesquisado=nome.upper(),
+            nome_pesquisado=nome.upper() or emissor.upper(),
             total=total
         )
 
@@ -135,6 +136,7 @@ def buscar():
         session['ultimo_resultado'] = json.dumps({
             'nome': nome,
             'cpf':  cpf,
+            'emissor': emissor,
         })
 
         preview = {}
@@ -153,7 +155,7 @@ def buscar():
             'anos':    [str(a) for a in anos],
             'resumo':  resumo,
             'preview': preview,
-            'nome_encontrado': nome or cpf,
+            'nome_encontrado': nome or cpf or emissor,
         })
 
     except Exception as e:
@@ -166,17 +168,18 @@ def buscar():
 def exportar_excel():
     nome    = request.form.get('nome', '')
     cpf     = request.form.get('cpf', '')
+    emissor = request.form.get('emissor', '')
     ano_ini = request.form.get('ano_ini', '')
     ano_fim = request.form.get('ano_fim', '')
 
-    resultado = buscar_gtas(nome=nome, cpf=cpf,
+    resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                              ano_ini=ano_ini or None,
                              ano_fim=ano_fim or None)
     if not resultado:
         return 'Sem resultados', 404
 
-    buf = gerar_excel_resultado(resultado, nome, cpf)
-    nome_arquivo = f"GTA_{(nome or cpf).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    buf = gerar_excel_resultado(resultado, nome or emissor, cpf)
+    nome_arquivo = f"GTA_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return send_file(buf, as_attachment=True,
                      download_name=nome_arquivo,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -187,17 +190,18 @@ def exportar_excel():
 def exportar_csv():
     nome    = request.form.get('nome', '')
     cpf     = request.form.get('cpf', '')
+    emissor = request.form.get('emissor', '')
     ano_ini = request.form.get('ano_ini', '')
     ano_fim = request.form.get('ano_fim', '')
 
-    resultado = buscar_gtas(nome=nome, cpf=cpf,
+    resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                              ano_ini=ano_ini or None,
                              ano_fim=ano_fim or None)
     if not resultado:
         return 'Sem resultados', 404
 
-    buf = gerar_csv_resultado(resultado, nome, cpf)
-    nome_arquivo = f"GTA_{(nome or cpf).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
+    buf = gerar_csv_resultado(resultado, nome or emissor, cpf)
+    nome_arquivo = f"GTA_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
     return send_file(buf, as_attachment=True,
                      download_name=nome_arquivo,
                      mimetype='text/csv')

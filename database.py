@@ -7,6 +7,13 @@ PADROES_ORIG_CPF  = ['cpf ou cnpj do produtor de origem', 'origem_identificacao'
 PADROES_DEST_CPF  = ['cpf ou cnpj do produtor de destino', 'destinatario_identificacao']
 PADROES_ORIG_NOME = ['nome do produtor de origem', 'origem_nome']
 PADROES_DEST_NOME = ['nome do produtor de destino', 'destinatario_nome']
+PADROES_EMISSOR   = [
+    'emitida_por_nome',
+    'usuário emissor',
+    'usuario emissor',
+    'usuário emissor',
+    'ususario emissor',
+]
 
 def detectar_col(colunas, padroes):
     cols_lower = {c.lower().strip(): c for c in colunas}
@@ -53,17 +60,20 @@ def init_db():
         orig_nome TEXT,
         dest_cpf TEXT,
         dest_nome TEXT,
+        emissor_nome TEXT,
         dados_json TEXT NOT NULL
     )''')
 
-    c.execute('CREATE INDEX IF NOT EXISTS idx_orig_cpf  ON gtas(orig_cpf)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_dest_cpf  ON gtas(dest_cpf)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_ano       ON gtas(ano)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_orig_cpf    ON gtas(orig_cpf)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_dest_cpf    ON gtas(dest_cpf)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_ano         ON gtas(ano)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_emissor     ON gtas(emissor_nome)')
 
     c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS gtas_fts
         USING fts5(
             orig_nome,
             dest_nome,
+            emissor_nome,
             content='gtas',
             content_rowid='id',
             tokenize='unicode61 remove_diacritics 1'
@@ -72,22 +82,22 @@ def init_db():
 
     c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ai
         AFTER INSERT ON gtas BEGIN
-            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome)
-            VALUES (new.id, new.orig_nome, new.dest_nome);
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
         END
     ''')
     c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ad
         AFTER DELETE ON gtas BEGIN
-            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome)
-            VALUES ('delete', old.id, old.orig_nome, old.dest_nome);
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
         END
     ''')
     c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_au
         AFTER UPDATE ON gtas BEGIN
-            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome)
-            VALUES ('delete', old.id, old.orig_nome, old.dest_nome);
-            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome)
-            VALUES (new.id, new.orig_nome, new.dest_nome);
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
         END
     ''')
 
@@ -147,9 +157,89 @@ def migrar_fts():
         return
 
     print(f"Populando FTS5 com {total_gtas:,} registros. Aguarde...")
-    c.execute("INSERT INTO gtas_fts(rowid, orig_nome, dest_nome) SELECT id, orig_nome, dest_nome FROM gtas")
+    c.execute("INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome) SELECT id, orig_nome, dest_nome, emissor_nome FROM gtas")
     conn.commit()
     print("✅ Migração FTS5 concluída!")
+    conn.close()
+
+
+def migrar_emissor():
+    """
+    Roda UMA VEZ para adicionar a coluna emissor_nome ao banco existente
+    e popular o FTS com o novo campo.
+    Execute no terminal:
+    python -c "from database import migrar_emissor; migrar_emissor()"
+    """
+    conn = get_conn()
+    c = conn.cursor()
+
+    # Verifica se a coluna já existe
+    cols = [r[1] for r in c.execute("PRAGMA table_info(gtas)").fetchall()]
+    if 'emissor_nome' not in cols:
+        print("Adicionando coluna emissor_nome...")
+        c.execute("ALTER TABLE gtas ADD COLUMN emissor_nome TEXT")
+        conn.commit()
+        print("✅ Coluna adicionada!")
+    else:
+        print("Coluna emissor_nome já existe.")
+
+    # Recria índice
+    c.execute('CREATE INDEX IF NOT EXISTS idx_emissor ON gtas(emissor_nome)')
+    conn.commit()
+
+    # Recria FTS com novo campo
+    print("Recriando FTS5 com campo emissor_nome...")
+    try:
+        c.execute("DROP TABLE IF EXISTS gtas_fts")
+        conn.commit()
+    except:
+        pass
+
+    c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS gtas_fts
+        USING fts5(
+            orig_nome,
+            dest_nome,
+            emissor_nome,
+            content='gtas',
+            content_rowid='id',
+            tokenize='unicode61 remove_diacritics 1'
+        )
+    ''')
+
+    # Recria triggers
+    for trigger in ['gtas_ai', 'gtas_ad', 'gtas_au']:
+        c.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ai
+        AFTER INSERT ON gtas BEGIN
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
+        END
+    ''')
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ad
+        AFTER DELETE ON gtas BEGIN
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
+        END
+    ''')
+    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_au
+        AFTER UPDATE ON gtas BEGIN
+            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
+            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
+            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
+        END
+    ''')
+    conn.commit()
+
+    # Popula FTS
+    print("Populando FTS5... aguarde.")
+    c.execute("""
+        INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
+        SELECT id, orig_nome, dest_nome, emissor_nome FROM gtas
+    """)
+    conn.commit()
+    print("✅ Migração do emissor concluída!")
     conn.close()
 
 
@@ -175,22 +265,24 @@ def importar_dataframe(df, ano, nome_arquivo):
     col_dest_cpf  = detectar_col(cols, PADROES_DEST_CPF)
     col_orig_nome = detectar_col(cols, PADROES_ORIG_NOME)
     col_dest_nome = detectar_col(cols, PADROES_DEST_NOME)
+    col_emissor   = detectar_col(cols, PADROES_EMISSOR)
 
     conn = get_conn()
     c = conn.cursor()
     lote = []
 
     for _, row in df.iterrows():
-        orig_cpf  = norm_cpf(row.get(col_orig_cpf,  '')) if col_orig_cpf  else ''
-        dest_cpf  = norm_cpf(row.get(col_dest_cpf,  '')) if col_dest_cpf  else ''
-        orig_nome = str(row.get(col_orig_nome, '')).upper().strip() if col_orig_nome else ''
-        dest_nome = str(row.get(col_dest_nome, '')).upper().strip() if col_dest_nome else ''
-        dados     = json.dumps(row.to_dict(), ensure_ascii=False, default=str)
-        lote.append((ano, nome_arquivo, orig_cpf, orig_nome, dest_cpf, dest_nome, dados))
+        orig_cpf     = norm_cpf(row.get(col_orig_cpf,  '')) if col_orig_cpf  else ''
+        dest_cpf     = norm_cpf(row.get(col_dest_cpf,  '')) if col_dest_cpf  else ''
+        orig_nome    = str(row.get(col_orig_nome, '')).upper().strip() if col_orig_nome else ''
+        dest_nome    = str(row.get(col_dest_nome, '')).upper().strip() if col_dest_nome else ''
+        emissor_nome = str(row.get(col_emissor,   '')).upper().strip() if col_emissor   else ''
+        dados        = json.dumps(row.to_dict(), ensure_ascii=False, default=str)
+        lote.append((ano, nome_arquivo, orig_cpf, orig_nome, dest_cpf, dest_nome, emissor_nome, dados))
 
         if len(lote) >= 5000:
             c.executemany(
-                "INSERT INTO gtas (ano,arquivo,orig_cpf,orig_nome,dest_cpf,dest_nome,dados_json) VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO gtas (ano,arquivo,orig_cpf,orig_nome,dest_cpf,dest_nome,emissor_nome,dados_json) VALUES (?,?,?,?,?,?,?,?)",
                 lote
             )
             conn.commit()
@@ -198,7 +290,7 @@ def importar_dataframe(df, ano, nome_arquivo):
 
     if lote:
         c.executemany(
-            "INSERT INTO gtas (ano,arquivo,orig_cpf,orig_nome,dest_cpf,dest_nome,dados_json) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO gtas (ano,arquivo,orig_cpf,orig_nome,dest_cpf,dest_nome,emissor_nome,dados_json) VALUES (?,?,?,?,?,?,?,?)",
             lote
         )
         conn.commit()
@@ -217,50 +309,47 @@ def _fts_query(nome):
     return ' AND '.join(f'"{t}"' for t in tokens)
 
 
-def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
+def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     conn = get_conn()
-    nome = nome.strip().upper()
-    cpf  = norm_cpf(cpf)
+    nome    = nome.strip().upper()
+    cpf     = norm_cpf(cpf)
+    emissor = emissor.strip().upper()
 
     rows = []
+    params = []
 
-    if nome and cpf:
+    # Monta query FTS
+    fts_parts = []
+    if nome:
         fts_q = _fts_query(nome)
         if fts_q:
-            sql = """
-                SELECT g.* FROM gtas g
-                WHERE g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)
-                  AND (g.orig_cpf = ? OR g.dest_cpf = ?)
-            """
-            params = [fts_q, cpf, cpf]
-            if ano_ini: sql += " AND g.ano >= ?"; params.append(int(ano_ini))
-            if ano_fim: sql += " AND g.ano <= ?"; params.append(int(ano_fim))
-            sql += " ORDER BY g.ano"
-            rows = conn.execute(sql, params).fetchall()
+            fts_parts.append(f"orig_nome:{fts_q} OR dest_nome:{fts_q}")
+    if emissor:
+        fts_q_e = _fts_query(emissor)
+        if fts_q_e:
+            fts_parts.append(f"emissor_nome:{fts_q_e}")
 
-    elif nome:
-        fts_q = _fts_query(nome)
-        if not fts_q:
-            conn.close()
-            return {}
-        sql = """
-            SELECT g.* FROM gtas g
-            WHERE g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)
-        """
-        params = [fts_q]
-        if ano_ini: sql += " AND g.ano >= ?"; params.append(int(ano_ini))
-        if ano_fim: sql += " AND g.ano <= ?"; params.append(int(ano_fim))
-        sql += " ORDER BY g.ano"
+    if fts_parts or cpf:
+        sql_where = []
+
+        if fts_parts:
+            fts_full = ' OR '.join(fts_parts)
+            sql_where.append(f"g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)")
+            params.append(fts_full)
+
+        if cpf:
+            sql_where.append("(g.orig_cpf = ? OR g.dest_cpf = ?)")
+            params += [cpf, cpf]
+
+        if ano_ini:
+            sql_where.append("g.ano >= ?")
+            params.append(int(ano_ini))
+        if ano_fim:
+            sql_where.append("g.ano <= ?")
+            params.append(int(ano_fim))
+
+        sql = f"SELECT g.* FROM gtas g WHERE {' AND '.join(sql_where)} ORDER BY g.ano"
         rows = conn.execute(sql, params).fetchall()
-
-    elif cpf:
-        sql = "SELECT * FROM gtas WHERE (orig_cpf = ? OR dest_cpf = ?)"
-        params = [cpf, cpf]
-        if ano_ini: sql += " AND ano >= ?"; params.append(int(ano_ini))
-        if ano_fim: sql += " AND ano <= ?"; params.append(int(ano_fim))
-        sql += " ORDER BY ano"
-        rows = conn.execute(sql, params).fetchall()
-
     else:
         conn.close()
         return {}
@@ -273,13 +362,17 @@ def buscar_gtas(nome='', cpf='', ano_ini=None, ano_fim=None):
         dados = _limpar_nan(json.loads(row['dados_json']))
         is_orig = (nome and nome in (row['orig_nome'] or '')) or (cpf and cpf == row['orig_cpf'])
         is_dest = (nome and nome in (row['dest_nome'] or '')) or (cpf and cpf == row['dest_cpf'])
+        is_emissor = emissor and emissor in (row['emissor_nome'] or '')
 
         if ano not in resultado:
             resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
+
         if is_orig:
             resultado[ano]['origem'].append(dados)
-        if is_dest and not is_orig:
+        elif is_dest:
             resultado[ano]['destino'].append(dados)
+        elif is_emissor:
+            resultado[ano]['origem'].append(dados)
 
     return resultado
 

@@ -5,7 +5,7 @@
 <div class="card">
   <h2>🔍 Consulta de GTAs</h2>
   <div class="alerta alerta-info" style="margin-bottom:14px;">
-    Preencha ao menos um campo (nome ou CPF/CNPJ). O período é opcional.
+    Preencha ao menos um campo (nome, CPF/CNPJ ou usuário emissor). O período é opcional.
   </div>
   <div class="form-row col2">
     <div>
@@ -17,6 +17,14 @@
       <label>CPF ou CNPJ (somente números)</label>
       <input type="text" id="cpf" placeholder="ex: 12345678900" maxlength="18">
     </div>
+  </div>
+  <div class="form-row col2" style="margin-top:8px;">
+    <div>
+      <label>Usuário emissor da GTA</label>
+      <input type="text" id="emissor" placeholder="ex: JOAO DA SILVA"
+             oninput="this.value=this.value.toUpperCase()">
+    </div>
+    <div></div>
   </div>
   <div class="form-row col4">
     <div>
@@ -64,7 +72,7 @@
   <div class="card" style="text-align:center;padding:48px;color:#888;">
     <div style="font-size:48px;">🔍</div>
     <p style="margin-top:14px;font-size:15px;">Nenhum registro encontrado para os critérios informados.</p>
-    <p style="font-size:12px;margin-top:6px;">Verifique o nome ou CPF/CNPJ e tente novamente.</p>
+    <p style="font-size:12px;margin-top:6px;">Verifique os dados e tente novamente.</p>
   </div>
 </div>
 
@@ -78,13 +86,14 @@ function setStatus(msg, tipo='') {
 }
 
 async function buscar() {
-  const nome   = document.getElementById('nome').value.trim();
-  const cpf    = document.getElementById('cpf').value.trim();
-  const anoIni = document.getElementById('ano_ini').value.trim();
-  const anoFim = document.getElementById('ano_fim').value.trim();
+  const nome    = document.getElementById('nome').value.trim();
+  const cpf     = document.getElementById('cpf').value.trim();
+  const emissor = document.getElementById('emissor').value.trim();
+  const anoIni  = document.getElementById('ano_ini').value.trim();
+  const anoFim  = document.getElementById('ano_fim').value.trim();
 
-  if (!nome && !cpf) {
-    setStatus('⚠️ Informe nome ou CPF/CNPJ.', 'erro');
+  if (!nome && !cpf && !emissor) {
+    setStatus('⚠️ Informe nome, CPF/CNPJ ou usuário emissor.', 'erro');
     return;
   }
 
@@ -98,6 +107,7 @@ async function buscar() {
   const fd = new FormData();
   fd.append('nome', nome);
   fd.append('cpf', cpf);
+  fd.append('emissor', emissor);
   fd.append('ano_ini', anoIni);
   fd.append('ano_fim', anoFim);
 
@@ -138,7 +148,7 @@ async function buscar() {
       return;
     }
 
-    dadosBusca = { nome, cpf, ano_ini: anoIni, ano_fim: anoFim };
+    dadosBusca = { nome, cpf, emissor, ano_ini: anoIni, ano_fim: anoFim };
     renderResultado(data);
     setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
     document.getElementById('btn-exportar').style.display = 'block';
@@ -212,6 +222,7 @@ function exportar() {
   const fd = new FormData();
   fd.append('nome',    dadosBusca.nome);
   fd.append('cpf',     dadosBusca.cpf);
+  fd.append('emissor', dadosBusca.emissor);
   fd.append('ano_ini', dadosBusca.ano_ini);
   fd.append('ano_fim', dadosBusca.ano_fim);
 
@@ -222,7 +233,7 @@ function exportar() {
       const url  = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href  = url;
-      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf).replace(/\s/g,'_').substring(0,30)}.xlsx`;
+      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.xlsx`;
       link.click();
       setStatus('✅ Excel gerado com sucesso.');
     })
@@ -233,6 +244,7 @@ function exportarCSV() {
   const fd = new FormData();
   fd.append('nome',    dadosBusca.nome);
   fd.append('cpf',     dadosBusca.cpf);
+  fd.append('emissor', dadosBusca.emissor);
   fd.append('ano_ini', dadosBusca.ano_ini);
   fd.append('ano_fim', dadosBusca.ano_fim);
 
@@ -243,7 +255,7 @@ function exportarCSV() {
       const url  = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href  = url;
-      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf).replace(/\s/g,'_').substring(0,30)}.csv`;
+      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.csv`;
       link.click();
       setStatus('✅ CSV gerado com sucesso.');
     })
