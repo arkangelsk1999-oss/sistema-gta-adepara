@@ -1,11 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 import pandas as pd
-import json, os, re, io, threading
+import json, os, re, io, threading, time
 
 from database import (
     init_db, get_conn, buscar_gtas, importar_dataframe,
@@ -22,6 +22,39 @@ app.secret_key = os.environ.get('SECRET_KEY', 'arkangelsk-2025-chave-secreta')
 UPLOAD_FOLDER = Path(__file__).parent / 'uploads_temp'
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
+
+# ── Controle de tentativas de login ───────────────────────────
+# { ip: {'tentativas': N, 'bloqueado_ate': datetime} }
+tentativas_login = {}
+MAX_TENTATIVAS   = 5
+BLOQUEIO_MINUTOS = 15
+
+def verificar_bloqueio(ip):
+    """Retorna (bloqueado, segundos_restantes)"""
+    if ip not in tentativas_login:
+        return False, 0
+    dados = tentativas_login[ip]
+    if 'bloqueado_ate' in dados:
+        restante = (dados['bloqueado_ate'] - datetime.now()).total_seconds()
+        if restante > 0:
+            return True, int(restante)
+        else:
+            del tentativas_login[ip]
+    return False, 0
+
+def registrar_tentativa(ip):
+    """Registra tentativa falha. Retorna True se bloqueou agora."""
+    if ip not in tentativas_login:
+        tentativas_login[ip] = {'tentativas': 0}
+    tentativas_login[ip]['tentativas'] += 1
+    if tentativas_login[ip]['tentativas'] >= MAX_TENTATIVAS:
+        tentativas_login[ip]['bloqueado_ate'] = datetime.now() + timedelta(minutes=BLOQUEIO_MINUTOS)
+        return True
+    return False
+
+def limpar_tentativas(ip):
+    if ip in tentativas_login:
+        del tentativas_login[ip]
 
 def login_required(f):
     @wraps(f)
@@ -56,7 +89,17 @@ def extrair_ano(nome):
 
 @app.route('/login', methods=['GET','POST'])
 def login():
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     erro = None
+
+    # Verifica bloqueio
+    bloqueado, segundos = verificar_bloqueio(ip)
+    if bloqueado:
+        minutos = segundos // 60
+        segs    = segundos % 60
+        erro = f"Acesso bloqueado por tentativas excessivas. Tente novamente em {minutos}m {segs}s."
+        return render_template('login.html', erro=erro, bloqueado=True)
+
     if request.method == 'POST':
         email = request.form.get('email','').strip().lower()
         senha = request.form.get('senha','')
@@ -67,6 +110,7 @@ def login():
         conn.close()
 
         if user and check_password_hash(user['senha_hash'], senha):
+            limpar_tentativas(ip)
             session['usuario_id']    = user['id']
             session['usuario_nome']  = user['nome']
             session['usuario_email'] = user['email']
@@ -79,8 +123,16 @@ def login():
             conn.close()
             return redirect(url_for('index'))
         else:
-            erro = 'E-mail ou senha incorretos.'
-    return render_template('login.html', erro=erro)
+            bloqueou = registrar_tentativa(ip)
+            dados = tentativas_login.get(ip, {})
+            tentativas = dados.get('tentativas', 0)
+            restantes = MAX_TENTATIVAS - tentativas
+            if bloqueou:
+                erro = f"Acesso bloqueado por {BLOQUEIO_MINUTOS} minutos devido a tentativas excessivas."
+            else:
+                erro = f"E-mail ou senha incorretos. {restantes} tentativa(s) restante(s) antes do bloqueio."
+
+    return render_template('login.html', erro=erro, bloqueado=False)
 
 @app.route('/logout')
 def logout():
@@ -271,7 +323,7 @@ def auditoria_pdf():
 def usuarios():
     conn = get_conn()
     lista = [dict(r) for r in conn.execute(
-        "SELECT id,nome,cpf,email,orgao,nivel,ativo,criado_em,ultimo_acesso FROM usuarios ORDER BY nome"
+        "SELECT id,nome,cpf,email,orgao,nivel,ativo,criado_em,ultimo_acesso FROM usuarios WHERE nivel != 'founder' ORDER BY nome"
     ).fetchall()]
     conn.close()
     return render_template('usuarios.html', usuarios=lista, usuario=get_usuario_session())

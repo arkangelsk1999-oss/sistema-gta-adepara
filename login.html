@@ -7,12 +7,10 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; background: #1a5276; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-
 .login-box {
   background: white; border-radius: 8px; padding: 40px;
   width: 100%; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
-
 .cabecalho-login {
   text-align: center; margin-bottom: 28px;
 }
@@ -22,38 +20,39 @@ body { font-family: Arial, sans-serif; background: #1a5276; min-height: 100vh; d
 .cabecalho-login .subtitulo {
   font-size: 11px; color: #888;
 }
-
 .form-group { margin-bottom: 16px; }
 label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; font-weight: bold; }
 input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
 input:focus { outline: none; border-color: #1a5276; }
-
+input:disabled { background: #f5f5f5; cursor: not-allowed; }
 .senha-wrap { position: relative; }
 .senha-wrap input { padding-right: 40px; }
 .senha-wrap .olho {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   cursor: pointer; font-size: 16px; user-select: none;
 }
-
 .btn-entrar {
   width: 100%; background: #1a5276; color: white; border: none;
   padding: 12px; border-radius: 4px; font-size: 15px; font-weight: bold;
   cursor: pointer; margin-top: 8px;
 }
 .btn-entrar:hover { background: #154360; }
-
+.btn-entrar:disabled { background: #aaa; cursor: not-allowed; }
 .erro { background: #fadbd8; color: #c0392b; padding: 10px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; }
-
+.bloqueio { background: #f9ebea; color: #922b21; padding: 14px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; border: 1px solid #e74c3c; text-align: center; }
+.bloqueio .icone { font-size: 24px; margin-bottom: 6px; }
+.contador { font-weight: bold; font-size: 15px; color: #c0392b; margin-top: 6px; }
 .rodape-login {
   margin-top: 24px; text-align: center; font-size: 11px; color: #aaa;
 }
 .rodape-login img.ark { height: 40px; opacity: 0.6; margin-top: 8px; }
-
 .adepara-logo { height: 40px; margin-top: 10px; }
+.tentativas-aviso {
+  font-size: 11px; color: #e67e22; text-align: center; margin-top: 6px;
+}
 </style>
 </head>
 <body>
-
 <div class="login-box">
   <div class="cabecalho-login">
     <div class="titulo-orgao">AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ</div>
@@ -62,23 +61,33 @@ input:focus { outline: none; border-color: #1a5276; }
     <div class="subtitulo" style="margin-top:12px;">Sistema de Consulta a Histórico de Emissões de GTAs</div>
   </div>
 
-  {% if erro %}
+  {% if bloqueado %}
+  <div class="bloqueio">
+    <div class="icone">🔒</div>
+    <div>{{ erro }}</div>
+    <div class="contador" id="contador"></div>
+  </div>
+  {% elif erro %}
   <div class="erro">{{ erro }}</div>
   {% endif %}
 
-  <form method="POST">
+  <form method="POST" id="form-login">
     <div class="form-group">
       <label>E-mail de acesso</label>
-      <input type="email" name="email" placeholder="seu@email.gov.br" required autofocus>
+      <input type="email" name="email" placeholder="seu@email.gov.br" required autofocus
+             {% if bloqueado %}disabled{% endif %}>
     </div>
     <div class="form-group">
       <label>Senha</label>
       <div class="senha-wrap">
-        <input type="password" id="senha" name="senha" placeholder="••••••••" required>
+        <input type="password" id="senha" name="senha" placeholder="••••••••" required
+               {% if bloqueado %}disabled{% endif %}>
         <span class="olho" onclick="toggleSenha()">👁️</span>
       </div>
     </div>
-    <button type="submit" class="btn-entrar">Entrar</button>
+    <button type="submit" class="btn-entrar" {% if bloqueado %}disabled{% endif %}>
+      {% if bloqueado %}🔒 Acesso Bloqueado{% else %}Entrar{% endif %}
+    </button>
   </form>
 
   <div class="rodape-login">
@@ -100,7 +109,24 @@ function toggleSenha() {
     olho.textContent = '👁️';
   }
 }
-</script>
 
+{% if bloqueado %}
+// Contador regressivo
+let segundos = {{ segundos if segundos is defined else 900 }};
+function atualizarContador() {
+  if (segundos <= 0) {
+    location.reload();
+    return;
+  }
+  const m = Math.floor(segundos / 60);
+  const s = segundos % 60;
+  const el = document.getElementById('contador');
+  if (el) el.textContent = `Desbloqueio em: ${m}m ${String(s).padStart(2,'0')}s`;
+  segundos--;
+  setTimeout(atualizarContador, 1000);
+}
+atualizarContador();
+{% endif %}
+</script>
 </body>
 </html>
