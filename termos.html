@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Termos de Uso — Sistema GTA ADEPARÁ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #1a5276; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+.termos-box {
+  background: white; border-radius: 8px; padding: 40px;
+  width: 100%; max-width: 700px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.cabecalho { text-align: center; margin-bottom: 28px; }
+.cabecalho .titulo-orgao { font-size: 13px; font-weight: bold; color: #1a5276; }
+.adepara-logo { height: 40px; margin-top: 10px; }
+h2 { font-size: 16px; color: #1a5276; text-align: center; margin: 16px 0 8px; }
+.versao { font-size: 11px; color: #888; text-align: center; margin-bottom: 20px; }
+.termos-conteudo {
+  max-height: 380px; overflow-y: auto; border: 1px solid #ddd;
+  border-radius: 4px; padding: 16px; font-size: 13px; line-height: 1.7;
+  color: #333; margin-bottom: 20px; background: #fafafa;
+}
+.termos-conteudo h3 { color: #1a5276; font-size: 13px; margin: 14px 0 6px; }
+.termos-conteudo p { margin-bottom: 8px; }
+.termos-conteudo ul { margin-left: 20px; margin-bottom: 8px; }
+.scroll-aviso { font-size: 11px; color: #e67e22; text-align: center; margin-bottom: 12px; }
+.aceite-linha {
+  display: flex; align-items: center; gap: 10px;
+  background: #d6eaf8; padding: 12px; border-radius: 4px; margin-bottom: 16px;
+  font-size: 13px; color: #1a5276;
+}
+.aceite-linha input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; }
+.btn-aceitar {
+  width: 100%; background: #1e8449; color: white; border: none;
+  padding: 12px; border-radius: 4px; font-size: 15px; font-weight: bold;
+  cursor: pointer;
+}
+.btn-aceitar:hover { background: #196f3d; }
+.btn-aceitar:disabled { background: #aaa; cursor: not-allowed; }
+.btn-recusar {
+  width: 100%; background: #aaa; color: white; border: none;
+  padding: 10px; border-radius: 4px; font-size: 13px; cursor: pointer; margin-top: 8px;
+}
+.btn-recusar:hover { background: #888; }
+.rodape { margin-top: 20px; text-align: center; font-size: 11px; color: #aaa; }
+.rodape img { height: 36px; opacity: 0.6; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="termos-box">
+  <div class="cabecalho">
+    <div class="titulo-orgao">AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ</div>
+    <img src="/adepara_logo.png" class="adepara-logo" alt="ADEPARÁ" onerror="this.style.display='none'">
+  </div>
+
+  <h2>📋 Termos de Uso</h2>
+  <div class="versao">Versão {{ versao }} — Leia atentamente antes de prosseguir</div>
+
+  <div class="termos-conteudo" id="termos-scroll" onscroll="verificarScroll()">
+
+    <h3>1. Acesso e Elegibilidade</h3>
+    <p>O acesso a este sistema é restrito exclusivamente a servidores públicos e agentes autorizados pela ADEPARÁ ou por órgãos parceiros formalmente credenciados. O uso por pessoas não autorizadas é expressamente proibido e sujeito às sanções previstas em lei.</p>
+
+    <h3>2. Finalidade do Sistema</h3>
+    <p>Este sistema destina-se exclusivamente à consulta do histórico de emissões de Guias de Trânsito Animal (GTAs) para fins de fiscalização, controle sanitário, investigação administrativa e atendimento a demandas judiciais e institucionais. Qualquer uso diverso desta finalidade é vedado.</p>
+
+    <h3>3. Confidencialidade das Informações</h3>
+    <p>As informações acessadas por meio deste sistema são de natureza sigilosa e de uso institucional. É expressamente proibido:</p>
+    <ul>
+      <li>Compartilhar, divulgar ou repassar informações obtidas neste sistema a terceiros não autorizados</li>
+      <li>Utilizar os dados para fins pessoais ou comerciais</li>
+      <li>Reproduzir ou publicar os dados sem autorização formal da ADEPARÁ</li>
+    </ul>
+
+    <h3>4. Responsabilidade do Usuário</h3>
+    <p>O usuário é integralmente responsável por todas as ações realizadas com suas credenciais de acesso. O compartilhamento de login e senha é expressamente proibido. Cada acesso é individual, intransferível e registrado em sistema de auditoria.</p>
+
+    <h3>5. Monitoramento e Auditoria</h3>
+    <p>Todas as consultas realizadas neste sistema são registradas automaticamente, incluindo data, hora, identificação do usuário e endereço IP do equipamento utilizado. Esses registros poderão ser utilizados em procedimentos administrativos ou judiciais.</p>
+
+    <h3>6. Rastreabilidade dos Relatórios</h3>
+    <p>Todos os relatórios exportados pelo sistema contêm, em seus metadados e estrutura interna, a identificação completa do usuário que os gerou, incluindo nome e CPF. Essa informação é permanente e não pode ser removida sem deixar vestígios.</p>
+
+    <h3>7. Penalidades</h3>
+    <p>O uso indevido deste sistema, incluindo acesso não autorizado, divulgação de informações sigilosas ou qualquer conduta em desacordo com estes termos, sujeitará o infrator às penalidades previstas na legislação vigente, incluindo a Lei nº 8.112/1990, a Lei nº 13.709/2018 (LGPD) e demais normas aplicáveis.</p>
+
+    <h3>8. Vigência</h3>
+    <p>Estes termos entram em vigor na data de seu aceite pelo usuário e permanecem válidos durante todo o período de acesso ao sistema. A ADEPARÁ reserva-se o direito de atualizar estes termos a qualquer momento, sendo o novo aceite exigido dos usuários quando houver alteração.</p>
+
+  </div>
+
+  <div class="scroll-aviso" id="scroll-aviso">⬇️ Role até o final para habilitar o aceite</div>
+
+  <form method="POST" action="/termos/aceitar">
+    <div class="aceite-linha">
+      <input type="checkbox" id="chk-aceite" name="aceite" disabled onchange="verificarCheckbox()">
+      <label for="chk-aceite">
+        Li e concordo com os Termos de Uso acima, sendo ciente de que meu acesso é monitorado e registrado.
+      </label>
+    </div>
+    <button type="submit" class="btn-aceitar" id="btn-aceitar" disabled>✅ Aceitar e Continuar</button>
+  </form>
+
+  <form method="POST" action="/termos/recusar">
+    <button type="submit" class="btn-recusar">❌ Não aceito — Sair</button>
+  </form>
+
+  <div class="rodape">
+    <img src="/arkangelsk_logo.png" alt="Arkangelsk" onerror="this.style.display='none'">
+  </div>
+</div>
+
+<script>
+let scrollFinal = false;
+
+function verificarScroll() {
+  const el = document.getElementById('termos-scroll');
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+    scrollFinal = true;
+    document.getElementById('chk-aceite').disabled = false;
+    document.getElementById('scroll-aviso').style.display = 'none';
+  }
+}
+
+function verificarCheckbox() {
+  const chk = document.getElementById('chk-aceite');
+  document.getElementById('btn-aceitar').disabled = !chk.checked;
+}
+</script>
+</body>
+</html>

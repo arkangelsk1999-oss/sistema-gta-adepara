@@ -5,11 +5,12 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 import pandas as pd
-import json, os, re, io, threading, time
+import json, os, re, io, threading
 
 from database import (
     init_db, get_conn, buscar_gtas, importar_dataframe,
-    arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf
+    arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf,
+    verificar_aceite_termos, registrar_aceite_termos
 )
 from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado
 
@@ -24,13 +25,12 @@ UPLOAD_FOLDER.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 
 # ── Controle de tentativas de login ───────────────────────────
-# { ip: {'tentativas': N, 'bloqueado_ate': datetime} }
 tentativas_login = {}
 MAX_TENTATIVAS   = 5
 BLOQUEIO_MINUTOS = 15
+INATIVIDADE_MINUTOS = 30
 
 def verificar_bloqueio(ip):
-    """Retorna (bloqueado, segundos_restantes)"""
     if ip not in tentativas_login:
         return False, 0
     dados = tentativas_login[ip]
@@ -43,7 +43,6 @@ def verificar_bloqueio(ip):
     return False, 0
 
 def registrar_tentativa(ip):
-    """Registra tentativa falha. Retorna True se bloqueou agora."""
     if ip not in tentativas_login:
         tentativas_login[ip] = {'tentativas': 0}
     tentativas_login[ip]['tentativas'] += 1
@@ -61,6 +60,14 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if 'usuario_id' not in session:
             return redirect(url_for('login'))
+        ultimo = session.get('ultimo_acesso')
+        if ultimo:
+            ultimo_dt = datetime.fromisoformat(ultimo)
+            if datetime.now() - ultimo_dt > timedelta(minutes=INATIVIDADE_MINUTOS):
+                session.clear()
+                return redirect(url_for('login', expirado=1))
+        if request.endpoint not in ['exportar_excel', 'exportar_csv']:
+            session['ultimo_acesso'] = datetime.now().isoformat()
         return f(*args, **kwargs)
     return decorated
 
@@ -81,6 +88,7 @@ def get_usuario_session():
         'email': session.get('usuario_email'),
         'orgao': session.get('usuario_orgao'),
         'nivel': session.get('nivel'),
+        'cpf':   session.get('usuario_cpf'),
     }
 
 def extrair_ano(nome):
@@ -91,14 +99,14 @@ def extrair_ano(nome):
 def login():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     erro = None
+    expirado = request.args.get('expirado')
 
-    # Verifica bloqueio
     bloqueado, segundos = verificar_bloqueio(ip)
     if bloqueado:
         minutos = segundos // 60
         segs    = segundos % 60
         erro = f"Acesso bloqueado por tentativas excessivas. Tente novamente em {minutos}m {segs}s."
-        return render_template('login.html', erro=erro, bloqueado=True)
+        return render_template('login.html', erro=erro, bloqueado=True, segundos=segundos)
 
     if request.method == 'POST':
         email = request.form.get('email','').strip().lower()
@@ -115,12 +123,19 @@ def login():
             session['usuario_nome']  = user['nome']
             session['usuario_email'] = user['email']
             session['usuario_orgao'] = user['orgao']
+            session['usuario_cpf']   = user['cpf']
             session['nivel']         = user['nivel']
+            session['ultimo_acesso'] = datetime.now().isoformat()
             conn = get_conn()
             conn.execute("UPDATE usuarios SET ultimo_acesso=? WHERE id=?",
                          (datetime.now().isoformat(), user['id']))
             conn.commit()
             conn.close()
+
+            # Verifica se aceitou os termos
+            if not verificar_aceite_termos(user['id']):
+                return redirect(url_for('termos'))
+
             return redirect(url_for('index'))
         else:
             bloqueou = registrar_tentativa(ip)
@@ -132,12 +147,47 @@ def login():
             else:
                 erro = f"E-mail ou senha incorretos. {restantes} tentativa(s) restante(s) antes do bloqueio."
 
-    return render_template('login.html', erro=erro, bloqueado=False)
+    return render_template('login.html', erro=erro, bloqueado=False, segundos=0, expirado=expirado)
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+@app.route('/termos')
+def termos():
+    if 'usuario_id' not in session:
+        return redirect(url_for('login'))
+    conn = get_conn()
+    versao_ativa = conn.execute(
+        "SELECT versao FROM termos_versao WHERE ativo=1 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    versao = versao_ativa['versao'] if versao_ativa else '1.0'
+    return render_template('termos.html', versao=versao)
+
+@app.route('/termos/aceitar', methods=['POST'])
+def termos_aceitar():
+    if 'usuario_id' not in session:
+        return redirect(url_for('login'))
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    registrar_aceite_termos(
+        usuario_id=session['usuario_id'],
+        usuario_nome=session['usuario_nome'],
+        usuario_cpf=session.get('usuario_cpf', ''),
+        ip=ip
+    )
+    return redirect(url_for('index'))
+
+@app.route('/termos/recusar', methods=['POST'])
+def termos_recusar():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/ping')
+@login_required
+def ping():
+    return jsonify({'ok': True})
 
 @app.route('/')
 @login_required
@@ -186,9 +236,7 @@ def buscar():
         }
 
         session['ultimo_resultado'] = json.dumps({
-            'nome': nome,
-            'cpf':  cpf,
-            'emissor': emissor,
+            'nome': nome, 'cpf': cpf, 'emissor': emissor,
         })
 
         preview = {}
@@ -196,11 +244,7 @@ def buscar():
             orig = resultado[ano]['origem'][:10]
             dest = resultado[ano]['destino'][:10]
             cols = resultado[ano]['colunas']
-            preview[str(ano)] = {
-                'colunas': cols,
-                'origem':  orig,
-                'destino': dest,
-            }
+            preview[str(ano)] = {'colunas': cols, 'origem': orig, 'destino': dest}
 
         return jsonify({
             'total':   total,
@@ -225,15 +269,13 @@ def exportar_excel():
     ano_fim = request.form.get('ano_fim', '')
 
     resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
-                             ano_ini=ano_ini or None,
-                             ano_fim=ano_fim or None)
+                             ano_ini=ano_ini or None, ano_fim=ano_fim or None)
     if not resultado:
         return 'Sem resultados', 404
 
-    buf = gerar_excel_resultado(resultado, nome or emissor, cpf)
+    buf = gerar_excel_resultado(resultado, nome or emissor, cpf, usuario=get_usuario_session())
     nome_arquivo = f"GTA_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-    return send_file(buf, as_attachment=True,
-                     download_name=nome_arquivo,
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/exportar/csv', methods=['POST'])
@@ -247,16 +289,13 @@ def exportar_csv():
     ano_fim = request.form.get('ano_fim', '')
 
     resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
-                             ano_ini=ano_ini or None,
-                             ano_fim=ano_fim or None)
+                             ano_ini=ano_ini or None, ano_fim=ano_fim or None)
     if not resultado:
         return 'Sem resultados', 404
 
-    buf = gerar_csv_resultado(resultado, nome or emissor, cpf)
+    buf = gerar_csv_resultado(resultado, nome or emissor, cpf, usuario=get_usuario_session())
     nome_arquivo = f"GTA_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
-    return send_file(buf, as_attachment=True,
-                     download_name=nome_arquivo,
-                     mimetype='text/csv')
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype='text/csv')
 
 @app.route('/auditoria')
 @login_required
@@ -275,14 +314,11 @@ def auditoria_dados():
     sql  = "SELECT * FROM auditoria WHERE 1=1"
     params = []
     if data_ini:
-        sql += " AND data_hora >= ?"
-        params.append(data_ini)
+        sql += " AND data_hora >= ?"; params.append(data_ini)
     if data_fim:
-        sql += " AND data_hora <= ?"
-        params.append(data_fim + ' 23:59:59')
+        sql += " AND data_hora <= ?"; params.append(data_fim + ' 23:59:59')
     if usuario:
-        sql += " AND (usuario_nome LIKE ? OR usuario_login LIKE ?)"
-        params += [f'%{usuario}%', f'%{usuario}%']
+        sql += " AND (usuario_nome LIKE ? OR usuario_login LIKE ?)"; params += [f'%{usuario}%', f'%{usuario}%']
     sql += " ORDER BY data_hora DESC LIMIT 1000"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     conn.close()
@@ -299,18 +335,14 @@ def auditoria_pdf():
     sql  = "SELECT * FROM auditoria WHERE 1=1"
     params = []
     if data_ini:
-        sql += " AND data_hora >= ?"
-        params.append(data_ini)
+        sql += " AND data_hora >= ?"; params.append(data_ini)
     if data_fim:
-        sql += " AND data_hora <= ?"
-        params.append(data_fim + ' 23:59:59')
+        sql += " AND data_hora <= ?"; params.append(data_fim + ' 23:59:59')
     if usuario:
-        sql += " AND (usuario_nome LIKE ? OR usuario_login LIKE ?)"
-        params += [f'%{usuario}%', f'%{usuario}%']
+        sql += " AND (usuario_nome LIKE ? OR usuario_login LIKE ?)"; params += [f'%{usuario}%', f'%{usuario}%']
     sql += " ORDER BY data_hora DESC"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     conn.close()
-
     gerado_por = get_usuario_session()
     buf = gerar_pdf_auditoria(rows, gerado_por, data_ini, data_fim)
     return send_file(buf, as_attachment=True,
@@ -342,7 +374,6 @@ def novo_usuario():
 
     if not all([nome, cpf, email, orgao, senha]):
         return jsonify({'erro': 'Preencha todos os campos'}), 400
-
     if nivel == 'founder' and session.get('nivel') != 'founder':
         return jsonify({'erro': 'Sem permissão'}), 403
 
@@ -396,11 +427,10 @@ def upload_arquivo():
     f    = request.files['arquivo']
     nome = secure_filename(f.name if hasattr(f,'name') else f.filename)
     nome = f.filename
+    ext  = nome.rsplit('.', 1)[-1].lower()
 
-    ext = nome.rsplit('.', 1)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         return jsonify({'erro': 'Formato não suportado. Use CSV ou XLSX'}), 400
-
     if arquivo_ja_importado(nome):
         return jsonify({'erro': f'Arquivo "{nome}" já foi importado anteriormente'}), 400
 
@@ -415,8 +445,7 @@ def upload_arquivo():
             ano = extrair_ano(nome)
             status_importacao[job_id]['msg'] = 'Lendo arquivo...'
             if ext == 'csv':
-                df = pd.read_csv(str(caminho), encoding='latin-1', sep=';',
-                                 dtype=str, low_memory=False)
+                df = pd.read_csv(str(caminho), encoding='latin-1', sep=';', dtype=str, low_memory=False)
             else:
                 abas = pd.read_excel(str(caminho), sheet_name=None, dtype=str)
                 df   = pd.concat(abas.values(), ignore_index=True)
@@ -429,15 +458,12 @@ def upload_arquivo():
             registrar_arquivo(nome, ano, linhas)
 
             status_importacao[job_id] = {
-                'status': 'concluido',
-                'progresso': 100,
+                'status': 'concluido', 'progresso': 100,
                 'msg': f'✅ {linhas:,} linhas importadas com sucesso!'
             }
         except Exception as e:
             status_importacao[job_id] = {
-                'status': 'erro',
-                'progresso': 0,
-                'msg': f'❌ Erro: {str(e)}'
+                'status': 'erro', 'progresso': 0, 'msg': f'❌ Erro: {str(e)}'
             }
         finally:
             if caminho.exists():

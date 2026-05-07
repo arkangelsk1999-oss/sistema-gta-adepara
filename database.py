@@ -122,8 +122,35 @@ def init_db():
         total_resultados INTEGER
     )''')
 
-    from werkzeug.security import generate_password_hash
+    # Tabela de versões dos termos de uso
+    c.execute('''CREATE TABLE IF NOT EXISTS termos_versao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        versao TEXT NOT NULL UNIQUE,
+        criado_em TEXT NOT NULL,
+        ativo INTEGER NOT NULL DEFAULT 1
+    )''')
+
+    # Tabela de aceites dos termos
+    c.execute('''CREATE TABLE IF NOT EXISTS termos_aceite (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id INTEGER NOT NULL,
+        usuario_nome TEXT NOT NULL,
+        usuario_cpf TEXT NOT NULL,
+        versao TEXT NOT NULL,
+        aceito_em TEXT NOT NULL,
+        ip TEXT
+    )''')
+
+    # Versão inicial dos termos
     from datetime import datetime
+    existe_versao = c.execute("SELECT id FROM termos_versao WHERE versao='1.0'").fetchone()
+    if not existe_versao:
+        c.execute(
+            "INSERT INTO termos_versao (versao, criado_em, ativo) VALUES (?,?,1)",
+            ('1.0', datetime.now().isoformat())
+        )
+
+    from werkzeug.security import generate_password_hash
     existe = c.execute("SELECT id FROM usuarios WHERE nivel='founder'").fetchone()
     if not existe:
         c.execute('''INSERT INTO usuarios 
@@ -143,38 +170,57 @@ def init_db():
     conn.close()
 
 
+def verificar_aceite_termos(usuario_id):
+    """Verifica se o usuário aceitou a versão atual dos termos."""
+    conn = get_conn()
+    versao_ativa = conn.execute(
+        "SELECT versao FROM termos_versao WHERE ativo=1 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not versao_ativa:
+        conn.close()
+        return True  # sem termos cadastrados, libera
+    versao = versao_ativa['versao']
+    aceite = conn.execute(
+        "SELECT id FROM termos_aceite WHERE usuario_id=? AND versao=?",
+        (usuario_id, versao)
+    ).fetchone()
+    conn.close()
+    return aceite is not None
+
+
+def registrar_aceite_termos(usuario_id, usuario_nome, usuario_cpf, ip):
+    """Registra o aceite dos termos pelo usuário."""
+    from datetime import datetime
+    conn = get_conn()
+    versao_ativa = conn.execute(
+        "SELECT versao FROM termos_versao WHERE ativo=1 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not versao_ativa:
+        conn.close()
+        return
+    versao = versao_ativa['versao']
+    conn.execute(
+        "INSERT INTO termos_aceite (usuario_id, usuario_nome, usuario_cpf, versao, aceito_em, ip) VALUES (?,?,?,?,?,?)",
+        (usuario_id, usuario_nome, usuario_cpf, versao, datetime.now().strftime('%d/%m/%Y %H:%M:%S'), ip)
+    )
+    conn.commit()
+    conn.close()
+
+
 def migrar_fts():
     conn = get_conn()
     c = conn.cursor()
     print("Verificando se migração FTS já foi feita...")
     total_fts  = c.execute("SELECT COUNT(*) FROM gtas_fts").fetchone()[0]
     total_gtas = c.execute("SELECT COUNT(*) FROM gtas").fetchone()[0]
-
     if total_fts >= total_gtas:
         print(f"FTS já populado ({total_fts} registros). Nada a fazer.")
         conn.close()
         return
-
     print(f"Populando FTS5 com {total_gtas:,} registros. Aguarde...")
     c.execute("INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome) SELECT id, orig_nome, dest_nome, emissor_nome FROM gtas")
     conn.commit()
     print("✅ Migração FTS5 concluída!")
-    conn.close()
-
-
-def migrar_emissor():
-    conn = get_conn()
-    c = conn.cursor()
-    cols = [r[1] for r in c.execute("PRAGMA table_info(gtas)").fetchall()]
-    if 'emissor_nome' not in cols:
-        print("Adicionando coluna emissor_nome...")
-        c.execute("ALTER TABLE gtas ADD COLUMN emissor_nome TEXT")
-        conn.commit()
-        print("✅ Coluna adicionada!")
-    else:
-        print("Coluna emissor_nome já existe.")
-    c.execute('CREATE INDEX IF NOT EXISTS idx_emissor ON gtas(emissor_nome)')
-    conn.commit()
     conn.close()
 
 
@@ -245,12 +291,10 @@ def _fts_query(nome):
 
 
 def _nome_confere(nome_pesquisado, campo):
-    """Verifica se o nome pesquisado confere com o campo — aceita correspondência parcial por token."""
     if not nome_pesquisado or not campo:
         return False
     tokens = [t for t in nome_pesquisado.upper().split() if len(t) > 2]
     campo_upper = campo.upper()
-    # Pelo menos 2 tokens devem estar presentes no campo
     matches = sum(1 for t in tokens if t in campo_upper)
     return matches >= min(2, len(tokens))
 
@@ -276,16 +320,13 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
 
     if fts_parts or cpf:
         sql_where = []
-
         if fts_parts:
             fts_full = ' OR '.join(fts_parts)
             sql_where.append("g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)")
             params.append(fts_full)
-
         if cpf:
             sql_where.append("(g.orig_cpf = ? OR g.dest_cpf = ?)")
             params += [cpf, cpf]
-
         if ano_ini:
             sql_where.append("g.ano >= ?")
             params.append(int(ano_ini))
@@ -305,7 +346,6 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     for row in rows:
         ano   = row['ano']
         dados = _limpar_nan(json.loads(row['dados_json']))
-
         is_orig    = (nome    and _nome_confere(nome, row['orig_nome']))    or (cpf and cpf == row['orig_cpf'])
         is_dest    = (nome    and _nome_confere(nome, row['dest_nome']))    or (cpf and cpf == row['dest_cpf'])
         is_emissor = (emissor and _nome_confere(emissor, row['emissor_nome']))
