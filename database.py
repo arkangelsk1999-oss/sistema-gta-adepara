@@ -11,7 +11,6 @@ PADROES_EMISSOR   = [
     'emitida_por_nome',
     'usuário emissor',
     'usuario emissor',
-    'usuário emissor',
     'ususario emissor',
 ]
 
@@ -164,16 +163,8 @@ def migrar_fts():
 
 
 def migrar_emissor():
-    """
-    Roda UMA VEZ para adicionar a coluna emissor_nome ao banco existente
-    e popular o FTS com o novo campo.
-    Execute no terminal:
-    python -c "from database import migrar_emissor; migrar_emissor()"
-    """
     conn = get_conn()
     c = conn.cursor()
-
-    # Verifica se a coluna já existe
     cols = [r[1] for r in c.execute("PRAGMA table_info(gtas)").fetchall()]
     if 'emissor_nome' not in cols:
         print("Adicionando coluna emissor_nome...")
@@ -182,64 +173,8 @@ def migrar_emissor():
         print("✅ Coluna adicionada!")
     else:
         print("Coluna emissor_nome já existe.")
-
-    # Recria índice
     c.execute('CREATE INDEX IF NOT EXISTS idx_emissor ON gtas(emissor_nome)')
     conn.commit()
-
-    # Recria FTS com novo campo
-    print("Recriando FTS5 com campo emissor_nome...")
-    try:
-        c.execute("DROP TABLE IF EXISTS gtas_fts")
-        conn.commit()
-    except:
-        pass
-
-    c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS gtas_fts
-        USING fts5(
-            orig_nome,
-            dest_nome,
-            emissor_nome,
-            content='gtas',
-            content_rowid='id',
-            tokenize='unicode61 remove_diacritics 1'
-        )
-    ''')
-
-    # Recria triggers
-    for trigger in ['gtas_ai', 'gtas_ad', 'gtas_au']:
-        c.execute(f"DROP TRIGGER IF EXISTS {trigger}")
-
-    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ai
-        AFTER INSERT ON gtas BEGIN
-            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
-            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
-        END
-    ''')
-    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_ad
-        AFTER DELETE ON gtas BEGIN
-            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
-            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
-        END
-    ''')
-    c.execute('''CREATE TRIGGER IF NOT EXISTS gtas_au
-        AFTER UPDATE ON gtas BEGIN
-            INSERT INTO gtas_fts(gtas_fts, rowid, orig_nome, dest_nome, emissor_nome)
-            VALUES ('delete', old.id, old.orig_nome, old.dest_nome, old.emissor_nome);
-            INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
-            VALUES (new.id, new.orig_nome, new.dest_nome, new.emissor_nome);
-        END
-    ''')
-    conn.commit()
-
-    # Popula FTS
-    print("Populando FTS5... aguarde.")
-    c.execute("""
-        INSERT INTO gtas_fts(rowid, orig_nome, dest_nome, emissor_nome)
-        SELECT id, orig_nome, dest_nome, emissor_nome FROM gtas
-    """)
-    conn.commit()
-    print("✅ Migração do emissor concluída!")
     conn.close()
 
 
@@ -309,6 +244,17 @@ def _fts_query(nome):
     return ' AND '.join(f'"{t}"' for t in tokens)
 
 
+def _nome_confere(nome_pesquisado, campo):
+    """Verifica se o nome pesquisado confere com o campo — aceita correspondência parcial por token."""
+    if not nome_pesquisado or not campo:
+        return False
+    tokens = [t for t in nome_pesquisado.upper().split() if len(t) > 2]
+    campo_upper = campo.upper()
+    # Pelo menos 2 tokens devem estar presentes no campo
+    matches = sum(1 for t in tokens if t in campo_upper)
+    return matches >= min(2, len(tokens))
+
+
 def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     conn = get_conn()
     nome    = nome.strip().upper()
@@ -318,7 +264,6 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     rows = []
     params = []
 
-    # Monta query FTS
     fts_parts = []
     if nome:
         fts_q = _fts_query(nome)
@@ -334,7 +279,7 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
 
         if fts_parts:
             fts_full = ' OR '.join(fts_parts)
-            sql_where.append(f"g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)")
+            sql_where.append("g.id IN (SELECT rowid FROM gtas_fts WHERE gtas_fts MATCH ?)")
             params.append(fts_full)
 
         if cpf:
@@ -360,9 +305,10 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     for row in rows:
         ano   = row['ano']
         dados = _limpar_nan(json.loads(row['dados_json']))
-        is_orig = (nome and nome in (row['orig_nome'] or '')) or (cpf and cpf == row['orig_cpf'])
-        is_dest = (nome and nome in (row['dest_nome'] or '')) or (cpf and cpf == row['dest_cpf'])
-        is_emissor = emissor and emissor in (row['emissor_nome'] or '')
+
+        is_orig    = (nome    and _nome_confere(nome, row['orig_nome']))    or (cpf and cpf == row['orig_cpf'])
+        is_dest    = (nome    and _nome_confere(nome, row['dest_nome']))    or (cpf and cpf == row['dest_cpf'])
+        is_emissor = (emissor and _nome_confere(emissor, row['emissor_nome']))
 
         if ano not in resultado:
             resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
