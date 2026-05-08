@@ -170,12 +170,13 @@ tbody tr:hover td { background: #f0f4fb; }
 <div class="sidebar">
   <div class="label">Principal</div>
   <a href="/" class="{{ 'ativo' if request.path == '/' }}">🔍 Consulta</a>
-  {% if usuario.nivel in ['founder','master'] %}
+  {% if usuario.nivel in ['founder', 'master'] %}
   <div class="sep"></div>
   <div class="label">Administração</div>
-  <a href="/usuarios"  class="{{ 'ativo' if '/usuarios' in request.path }}">👥 Usuários</a>
-  <a href="/auditoria" class="{{ 'ativo' if '/auditoria' in request.path }}">📋 Auditoria</a>
-  <a href="/importar"  class="{{ 'ativo' if '/importar' in request.path }}">📂 Importar dados</a>
+  <a href="/usuarios"      class="{{ 'ativo' if '/usuarios' in request.path }}">👥 Usuários</a>
+  <a href="/auditoria"     class="{{ 'ativo' if '/auditoria' in request.path }}">📋 Auditoria</a>
+  <a href="/ip-localidade" class="{{ 'ativo' if '/ip-localidade' in request.path }}">🌐 IP / Localidade</a>
+  <a href="/importar"      class="{{ 'ativo' if '/importar' in request.path }}">📂 Importar dados</a>
   {% endif %}
 </div>
 

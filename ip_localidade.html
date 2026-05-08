@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}IP / Localidade{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>🌐 Mapeamento de IP por Equipamento</h2>
+  <button class="btn btn-azul" onclick="abrirModal()">+ Novo mapeamento</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>Localidade / Equipamento</th>
+          <th>Descrição</th>
+          <th>Cadastrado em</th>
+          <th>Atualizado em</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-ips">
+        {% for item in lista %}
+        <tr id="tr-{{ item.id }}">
+          <td><code>{{ item.ip }}</code></td>
+          <td>{{ item.localidade }}</td>
+          <td>{{ item.descricao or '—' }}</td>
+          <td>{{ item.criado_em[:16] if item.criado_em else '—' }}</td>
+          <td>{{ item.atualizado_em[:16] if item.atualizado_em else '—' }}</td>
+          <td>
+            <button class="btn btn-cinza" style="padding:4px 10px;font-size:11px"
+                    onclick="excluir({{ item.id }})">
+              🗑 Excluir
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" style="text-align:center;color:#aaa;padding:24px;">
+            Nenhum mapeamento cadastrado ainda.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="alerta alerta-info">
+  ℹ️ Quando um IP não estiver mapeado, a auditoria exibirá o endereço IP bruto.
+  Cadastre aqui os IPs fornecidos pelo TI da ADEPARÁ conforme forem disponibilizados.
+</div>
+
+<!-- Modal novo mapeamento -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:8px;padding:28px;width:100%;max-width:460px;margin:20px;">
+    <h3 style="margin-bottom:16px;color:#1a5276;">Novo Mapeamento</h3>
+    <div id="erro-modal" class="alerta alerta-erro" style="display:none;margin-bottom:12px;"></div>
+    <div class="form-row">
+      <div>
+        <label>Endereço IP *</label>
+        <input type="text" id="m-ip" placeholder="ex.: 10.8.16.73">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>Localidade / Equipamento *</label>
+        <input type="text" id="m-localidade" placeholder="ex.: Belém/PA — ADEPARÁ Sede — PC-001">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>Descrição (opcional)</label>
+        <input type="text" id="m-descricao" placeholder="ex.: Computador da sala de fiscalização">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-azul" style="flex:1" onclick="salvar()">Salvar</button>
+      <button class="btn btn-cinza" style="flex:1" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function abrirModal() {
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('m-ip').focus();
+}
+
+function fecharModal() {
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('erro-modal').style.display = 'none';
+  document.getElementById('m-ip').value = '';
+  document.getElementById('m-localidade').value = '';
+  document.getElementById('m-descricao').value = '';
+}
+
+async function salvar() {
+  const ip         = document.getElementById('m-ip').value.trim();
+  const localidade = document.getElementById('m-localidade').value.trim();
+  const descricao  = document.getElementById('m-descricao').value.trim();
+  const erroEl     = document.getElementById('erro-modal');
+
+  if (!ip || !localidade) {
+    erroEl.textContent = 'IP e Localidade são obrigatórios.';
+    erroEl.style.display = 'block';
+    return;
+  }
+
+  const resp = await fetch('/ip-localidade/salvar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip, localidade, descricao })
+  });
+  const data = await resp.json();
+  if (data.erro) {
+    erroEl.textContent = data.erro;
+    erroEl.style.display = 'block';
+  } else {
+    location.reload();
+  }
+}
+
+async function excluir(id) {
+  if (!confirm('Deseja excluir este mapeamento?')) return;
+  const resp = await fetch(`/ip-localidade/excluir/${id}`, { method: 'POST' });
+  const data = await resp.json();
+  if (data.ok) {
+    const tr = document.getElementById('tr-' + id);
+    if (tr) tr.remove();
+  }
+}
+</script>
+{% endblock %}

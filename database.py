@@ -122,7 +122,6 @@ def init_db():
         total_resultados INTEGER
     )''')
 
-    # Tabela de versões dos termos de uso
     c.execute('''CREATE TABLE IF NOT EXISTS termos_versao (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         versao TEXT NOT NULL UNIQUE,
@@ -130,7 +129,6 @@ def init_db():
         ativo INTEGER NOT NULL DEFAULT 1
     )''')
 
-    # Tabela de aceites dos termos
     c.execute('''CREATE TABLE IF NOT EXISTS termos_aceite (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario_id INTEGER NOT NULL,
@@ -141,7 +139,16 @@ def init_db():
         ip TEXT
     )''')
 
-    # Versão inicial dos termos
+    # ── NOVO: tabela de mapeamento IP → Localidade ────────────
+    c.execute('''CREATE TABLE IF NOT EXISTS ip_localidade (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT NOT NULL UNIQUE,
+        localidade TEXT NOT NULL,
+        descricao TEXT,
+        criado_em TEXT NOT NULL,
+        atualizado_em TEXT
+    )''')
+
     from datetime import datetime
     existe_versao = c.execute("SELECT id FROM termos_versao WHERE versao='1.0'").fetchone()
     if not existe_versao:
@@ -171,14 +178,13 @@ def init_db():
 
 
 def verificar_aceite_termos(usuario_id):
-    """Verifica se o usuário aceitou a versão atual dos termos."""
     conn = get_conn()
     versao_ativa = conn.execute(
         "SELECT versao FROM termos_versao WHERE ativo=1 ORDER BY id DESC LIMIT 1"
     ).fetchone()
     if not versao_ativa:
         conn.close()
-        return True  # sem termos cadastrados, libera
+        return True
     versao = versao_ativa['versao']
     aceite = conn.execute(
         "SELECT id FROM termos_aceite WHERE usuario_id=? AND versao=?",
@@ -189,7 +195,6 @@ def verificar_aceite_termos(usuario_id):
 
 
 def registrar_aceite_termos(usuario_id, usuario_nome, usuario_cpf, ip):
-    """Registra o aceite dos termos pelo usuário."""
     from datetime import datetime
     conn = get_conn()
     versao_ativa = conn.execute(
@@ -203,6 +208,53 @@ def registrar_aceite_termos(usuario_id, usuario_nome, usuario_cpf, ip):
         "INSERT INTO termos_aceite (usuario_id, usuario_nome, usuario_cpf, versao, aceito_em, ip) VALUES (?,?,?,?,?,?)",
         (usuario_id, usuario_nome, usuario_cpf, versao, datetime.now().strftime('%d/%m/%Y %H:%M:%S'), ip)
     )
+    conn.commit()
+    conn.close()
+
+
+# ── NOVO: funções de IP/Localidade ────────────────────────────
+def resolver_localidade(ip):
+    """Retorna a localidade mapeada para o IP, ou o próprio IP se não mapeado."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT localidade FROM ip_localidade WHERE ip=?", (ip,)
+    ).fetchone()
+    conn.close()
+    return row['localidade'] if row else ip
+
+
+def listar_ip_localidade():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM ip_localidade ORDER BY localidade"
+    ).fetchall()]
+    conn.close()
+    return rows
+
+
+def salvar_ip_localidade(ip, localidade, descricao=''):
+    from datetime import datetime
+    conn = get_conn()
+    existe = conn.execute(
+        "SELECT id FROM ip_localidade WHERE ip=?", (ip,)
+    ).fetchone()
+    if existe:
+        conn.execute(
+            "UPDATE ip_localidade SET localidade=?, descricao=?, atualizado_em=? WHERE ip=?",
+            (localidade, descricao, datetime.now().isoformat(), ip)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO ip_localidade (ip, localidade, descricao, criado_em) VALUES (?,?,?,?)",
+            (ip, localidade, descricao, datetime.now().isoformat())
+        )
+    conn.commit()
+    conn.close()
+
+
+def excluir_ip_localidade(id):
+    conn = get_conn()
+    conn.execute("DELETE FROM ip_localidade WHERE id=?", (id,))
     conn.commit()
     conn.close()
 

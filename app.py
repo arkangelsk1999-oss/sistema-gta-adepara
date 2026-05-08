@@ -10,7 +10,8 @@ import json, os, re, io, threading
 from database import (
     init_db, get_conn, buscar_gtas, importar_dataframe,
     arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf,
-    verificar_aceite_termos, registrar_aceite_termos
+    verificar_aceite_termos, registrar_aceite_termos,
+    resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade
 )
 from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado
 
@@ -213,10 +214,11 @@ def buscar():
         total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
 
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        localidade = resolver_localidade(ip)
         registrar_auditoria(
             usuario=get_usuario_session(),
             ip=ip,
-            localidade='',
+            localidade=localidade,
             cpf_pesquisado=norm_cpf(cpf),
             nome_pesquisado=nome.upper() or emissor.upper(),
             total=total
@@ -524,6 +526,37 @@ def manual_pdf():
     return send_file(caminho, as_attachment=True,
                      download_name='Manual_SistemaGTA_ADEPARA.pdf',
                      mimetype='application/pdf')
+
+# ── Gestão de IP/Localidade ───────────────────────────────────
+@app.route('/ip-localidade')
+@login_required
+@nivel_required('founder', 'master')
+def ip_localidade():
+    lista = listar_ip_localidade()
+    return render_template('ip_localidade.html', lista=lista, usuario=get_usuario_session())
+
+@app.route('/ip-localidade/salvar', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def ip_localidade_salvar():
+    dados = request.get_json()
+    ip         = dados.get('ip', '').strip()
+    localidade = dados.get('localidade', '').strip()
+    descricao  = dados.get('descricao', '').strip()
+    if not ip or not localidade:
+        return jsonify({'erro': 'IP e Localidade são obrigatórios'}), 400
+    try:
+        salvar_ip_localidade(ip, localidade, descricao)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'erro': str(e)}), 400
+
+@app.route('/ip-localidade/excluir/<int:id>', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def ip_localidade_excluir(id):
+    excluir_ip_localidade(id)
+    return jsonify({'ok': True})
 
 init_db()
 
