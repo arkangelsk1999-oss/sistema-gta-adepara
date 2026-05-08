@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Alterar Senha{% endblock %}
+
+{% block conteudo %}
+<div style="max-width:480px; margin:40px auto;">
+
+  <div class="card">
+    <h2>🔑 Alterar Senha</h2>
+
+    {% if sucesso %}
+    <div class="alerta alerta-ok" style="margin-bottom:16px;">
+      ✅ {{ sucesso }}
+    </div>
+    {% endif %}
+
+    {% if erro %}
+    <div class="alerta alerta-erro" style="margin-bottom:16px;">
+      ❌ {{ erro }}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/alterar-senha" onsubmit="return validar()">
+
+      <div class="form-row" style="margin-bottom:14px;">
+        <div>
+          <label for="senha_atual">Senha Atual</label>
+          <div style="position:relative;">
+            <input type="password" id="senha_atual" name="senha_atual"
+                   placeholder="Digite sua senha atual" required>
+            <span onclick="toggleVer('senha_atual', this)"
+                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                         cursor:pointer;font-size:16px;user-select:none;">👁</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row" style="margin-bottom:14px;">
+        <div>
+          <label for="senha_nova">Nova Senha</label>
+          <div style="position:relative;">
+            <input type="password" id="senha_nova" name="senha_nova"
+                   placeholder="Digite a nova senha" required
+                   oninput="checarRequisitos()">
+            <span onclick="toggleVer('senha_nova', this)"
+                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                         cursor:pointer;font-size:16px;user-select:none;">👁</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Indicador de requisitos -->
+      <div id="requisitos" style="background:#f8f8f8;border:1px solid #ddd;
+           border-radius:4px;padding:10px 14px;margin-bottom:14px;font-size:12px;">
+        <div style="font-weight:bold;color:#555;margin-bottom:6px;">A senha deve conter:</div>
+        <div id="req-len"  class="req">⬜ Mínimo de 8 caracteres</div>
+        <div id="req-mai"  class="req">⬜ Ao menos uma letra maiúscula</div>
+        <div id="req-num"  class="req">⬜ Ao menos um número</div>
+        <div id="req-esp"  class="req">⬜ Ao menos um caractere especial (@, #, !, $...)</div>
+      </div>
+
+      <div class="form-row" style="margin-bottom:20px;">
+        <div>
+          <label for="senha_conf">Confirmar Nova Senha</label>
+          <div style="position:relative;">
+            <input type="password" id="senha_conf" name="senha_conf"
+                   placeholder="Repita a nova senha" required
+                   oninput="checarConfirmacao()">
+            <span onclick="toggleVer('senha_conf', this)"
+                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                         cursor:pointer;font-size:16px;user-select:none;">👁</span>
+          </div>
+          <div id="msg-conf" style="font-size:12px;margin-top:4px;"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button type="submit" class="btn btn-azul" id="btn-salvar" disabled>
+          💾 Salvar Nova Senha
+        </button>
+        <a href="/" class="btn btn-cinza">Cancelar</a>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+
+<style>
+.req { padding: 2px 0; color: #999; transition: color 0.2s; }
+.req.ok { color: #1e8449; }
+.req.ok::first-letter { /* não usado, controlado via JS */ }
+</style>
+
+<script>
+function toggleVer(id, el) {
+  const input = document.getElementById(id);
+  if (input.type === 'password') {
+    input.type = 'text';
+    el.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    el.textContent = '👁';
+  }
+}
+
+function checarRequisitos() {
+  const v = document.getElementById('senha_nova').value;
+  const reqs = [
+    { id: 'req-len', ok: v.length >= 8 },
+    { id: 'req-mai', ok: /[A-Z]/.test(v) },
+    { id: 'req-num', ok: /[0-9]/.test(v) },
+    { id: 'req-esp', ok: /[^A-Za-z0-9]/.test(v) },
+  ];
+  let todos = true;
+  reqs.forEach(r => {
+    const el = document.getElementById(r.id);
+    if (r.ok) {
+      el.className = 'req ok';
+      el.textContent = '✅ ' + el.textContent.replace(/^[⬜✅] /, '');
+    } else {
+      el.className = 'req';
+      el.textContent = '⬜ ' + el.textContent.replace(/^[⬜✅] /, '');
+      todos = false;
+    }
+  });
+  checarConfirmacao();
+  atualizarBotao(todos);
+}
+
+function checarConfirmacao() {
+  const nova  = document.getElementById('senha_nova').value;
+  const conf  = document.getElementById('senha_conf').value;
+  const msg   = document.getElementById('msg-conf');
+  if (!conf) { msg.textContent = ''; return; }
+  if (nova === conf) {
+    msg.style.color = '#1e8449';
+    msg.textContent = '✅ As senhas coincidem.';
+  } else {
+    msg.style.color = '#c0392b';
+    msg.textContent = '❌ As senhas não coincidem.';
+  }
+  atualizarBotao();
+}
+
+function atualizarBotao(todosReqs) {
+  const nova = document.getElementById('senha_nova').value;
+  const conf = document.getElementById('senha_conf').value;
+  const reqs = nova.length >= 8 && /[A-Z]/.test(nova)
+            && /[0-9]/.test(nova) && /[^A-Za-z0-9]/.test(nova);
+  const btn  = document.getElementById('btn-salvar');
+  btn.disabled = !(reqs && nova === conf && conf.length > 0);
+}
+
+function validar() {
+  const nova = document.getElementById('senha_nova').value;
+  const conf = document.getElementById('senha_conf').value;
+  if (nova !== conf) {
+    alert('As senhas não coincidem!');
+    return false;
+  }
+  return true;
+}
+</script>
+
+{% endblock %}

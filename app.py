@@ -132,7 +132,6 @@ def login():
             conn.commit()
             conn.close()
 
-            # Verifica se aceitou os termos
             if not verificar_aceite_termos(user['id']):
                 return redirect(url_for('termos'))
 
@@ -476,6 +475,55 @@ def upload_arquivo():
 @login_required
 def status_job(job_id):
     return jsonify(status_importacao.get(job_id, {'status': 'desconhecido'}))
+
+# ── Alteração de senha ────────────────────────────────────────
+@app.route('/alterar-senha', methods=['GET', 'POST'])
+@login_required
+def alterar_senha():
+    erro = None
+    sucesso = None
+
+    if request.method == 'POST':
+        senha_atual = request.form.get('senha_atual', '')
+        senha_nova  = request.form.get('senha_nova', '').strip()
+        senha_conf  = request.form.get('senha_conf', '').strip()
+
+        conn = get_conn()
+        user = conn.execute("SELECT * FROM usuarios WHERE id=?",
+                            (session['usuario_id'],)).fetchone()
+        conn.close()
+
+        if not check_password_hash(user['senha_hash'], senha_atual):
+            erro = "Senha atual incorreta."
+        elif senha_nova != senha_conf:
+            erro = "A nova senha e a confirmação não coincidem."
+        elif len(senha_nova) < 8:
+            erro = "A nova senha deve ter ao menos 8 caracteres."
+        elif not re.search(r'[A-Z]', senha_nova):
+            erro = "A nova senha deve conter ao menos uma letra maiúscula."
+        elif not re.search(r'[0-9]', senha_nova):
+            erro = "A nova senha deve conter ao menos um número."
+        elif not re.search(r'[^A-Za-z0-9]', senha_nova):
+            erro = "A nova senha deve conter ao menos um caractere especial (@, #, !, $, etc.)."
+        else:
+            conn = get_conn()
+            conn.execute("UPDATE usuarios SET senha_hash=? WHERE id=?",
+                         (generate_password_hash(senha_nova), session['usuario_id']))
+            conn.commit()
+            conn.close()
+            sucesso = "Senha alterada com sucesso!"
+
+    return render_template('alterar_senha.html',
+                           usuario=get_usuario_session(),
+                           erro=erro, sucesso=sucesso)
+
+# ── Download do manual ────────────────────────────────────────
+@app.route('/manual')
+def manual_pdf():
+    caminho = Path(__file__).parent / 'Manual_e_Termos_SistemaGTA_ADEPARA.pdf'
+    return send_file(caminho, as_attachment=True,
+                     download_name='Manual_SistemaGTA_ADEPARA.pdf',
+                     mimetype='application/pdf')
 
 init_db()
 
