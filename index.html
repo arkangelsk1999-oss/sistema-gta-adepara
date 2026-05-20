@@ -52,6 +52,15 @@
   </div>
   {% endif %}
   <div id="status-busca" style="font-size:13px;color:#666;min-height:20px;margin-top:4px;"></div>
+
+  <!-- Barra de progresso -->
+  <div id="barra-container" style="display:none;margin-top:12px;">
+    <div style="font-size:12px;color:#555;margin-bottom:4px;" id="barra-label">Processando...</div>
+    <div style="background:#e0e0e0;border-radius:8px;height:14px;overflow:hidden;">
+      <div id="barra-progresso" style="background:#1A5276;height:100%;width:0%;border-radius:8px;transition:width 0.4s ease;"></div>
+    </div>
+    <div style="font-size:11px;color:#888;margin-top:4px;" id="barra-detalhe"></div>
+  </div>
 </div>
 
 <div id="area-resultado" style="display:none">
@@ -85,6 +94,18 @@ function setStatus(msg, tipo='') {
   el.style.color = tipo === 'erro' ? '#c0392b' : '#666';
 }
 
+function mostrarBarra(label, pct, detalhe='') {
+  document.getElementById('barra-container').style.display = 'block';
+  document.getElementById('barra-label').textContent = label;
+  document.getElementById('barra-progresso').style.width = pct + '%';
+  document.getElementById('barra-detalhe').textContent = detalhe;
+}
+
+function esconderBarra() {
+  document.getElementById('barra-container').style.display = 'none';
+  document.getElementById('barra-progresso').style.width = '0%';
+}
+
 async function buscar() {
   const nome    = document.getElementById('nome').value.trim();
   const cpf     = document.getElementById('cpf').value.trim();
@@ -102,7 +123,9 @@ async function buscar() {
   document.getElementById('btn-exportar').style.display = 'none';
   const btnCsv = document.getElementById('btn-exportar-csv');
   if (btnCsv) btnCsv.style.display = 'none';
+
   setStatus('<span class="spinner"></span> Buscando... (pode demorar alguns minutos para bases grandes)');
+  mostrarBarra('Buscando na base de dados...', 10);
 
   const fd = new FormData();
   fd.append('nome', nome);
@@ -114,6 +137,15 @@ async function buscar() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000);
 
+  // Animação de progresso durante a busca
+  let pct = 10;
+  const intervalo = setInterval(() => {
+    if (pct < 85) {
+      pct += Math.random() * 5;
+      mostrarBarra('Buscando na base de dados...', Math.min(pct, 85));
+    }
+  }, 2000);
+
   let resp, data;
 
   try {
@@ -123,8 +155,11 @@ async function buscar() {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
+    clearInterval(intervalo);
   } catch(e) {
     clearTimeout(timeoutId);
+    clearInterval(intervalo);
+    esconderBarra();
     if (e.name === 'AbortError') {
       setStatus('❌ Tempo limite excedido. Tente filtrar por ano.', 'erro');
     } else {
@@ -133,20 +168,31 @@ async function buscar() {
     return;
   }
 
+  mostrarBarra('Processando resultados...', 90);
+
   try {
     data = await resp.json();
   } catch(e) {
+    esconderBarra();
     setStatus('❌ Erro ao processar resposta do servidor: ' + e.message, 'erro');
     return;
   }
 
   try {
-    if (data.erro) { setStatus('❌ ' + data.erro, 'erro'); return; }
+    if (data.erro) {
+      esconderBarra();
+      setStatus('❌ ' + data.erro, 'erro');
+      return;
+    }
     if (data.vazio) {
+      esconderBarra();
       setStatus('');
       document.getElementById('area-vazio').style.display = 'block';
       return;
     }
+
+    mostrarBarra('Concluído!', 100, `${data.total.toLocaleString('pt-BR')} GTAs encontradas`);
+    setTimeout(esconderBarra, 2000);
 
     dadosBusca = { nome, cpf, emissor, ano_ini: anoIni, ano_fim: anoFim };
     renderResultado(data);
@@ -155,6 +201,7 @@ async function buscar() {
     if (btnCsv) btnCsv.style.display = 'inline-block';
 
   } catch(e) {
+    esconderBarra();
     setStatus('❌ Erro ao renderizar resultado: ' + e.message, 'erro');
   }
 }
@@ -218,7 +265,7 @@ function montarTabela(cols, orig, dest) {
   return `<table><thead><tr>${th}</tr></thead><tbody>${linhas}</tbody></table>`;
 }
 
-function exportar() {
+async function exportar() {
   const fd = new FormData();
   fd.append('nome',    dadosBusca.nome);
   fd.append('cpf',     dadosBusca.cpf);
@@ -226,21 +273,43 @@ function exportar() {
   fd.append('ano_ini', dadosBusca.ano_ini);
   fd.append('ano_fim', dadosBusca.ano_fim);
 
+  const btn = document.getElementById('btn-exportar');
+  btn.disabled = true;
   setStatus('<span class="spinner"></span> Gerando Excel...');
-  fetch('/exportar/excel', { method: 'POST', body: fd })
-    .then(r => r.blob())
-    .then(blob => {
-      const url  = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href  = url;
-      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.xlsx`;
-      link.click();
-      setStatus('✅ Excel gerado com sucesso.');
-    })
-    .catch(() => setStatus('❌ Erro ao gerar Excel.', 'erro'));
+  mostrarBarra('Gerando arquivo Excel...', 20, 'Processando dados...');
+
+  // Animação durante exportação
+  let pct = 20;
+  const intervalo = setInterval(() => {
+    if (pct < 85) {
+      pct += Math.random() * 8;
+      mostrarBarra('Gerando arquivo Excel...', Math.min(pct, 85), 'Processando dados...');
+    }
+  }, 3000);
+
+  try {
+    const resp = await fetch('/exportar/excel', { method: 'POST', body: fd });
+    clearInterval(intervalo);
+    mostrarBarra('Finalizando Excel...', 95);
+    const blob = await resp.blob();
+    mostrarBarra('Concluído!', 100, 'Download iniciado!');
+    setTimeout(esconderBarra, 2000);
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href  = url;
+    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.xlsx`;
+    link.click();
+    setStatus('✅ Excel gerado com sucesso.');
+  } catch(e) {
+    clearInterval(intervalo);
+    esconderBarra();
+    setStatus('❌ Erro ao gerar Excel.', 'erro');
+  }
+
+  btn.disabled = false;
 }
 
-function exportarCSV() {
+async function exportarCSV() {
   const fd = new FormData();
   fd.append('nome',    dadosBusca.nome);
   fd.append('cpf',     dadosBusca.cpf);
@@ -248,18 +317,39 @@ function exportarCSV() {
   fd.append('ano_ini', dadosBusca.ano_ini);
   fd.append('ano_fim', dadosBusca.ano_fim);
 
+  const btn = document.getElementById('btn-exportar-csv');
+  btn.disabled = true;
   setStatus('<span class="spinner"></span> Gerando CSV...');
-  fetch('/exportar/csv', { method: 'POST', body: fd })
-    .then(r => r.blob())
-    .then(blob => {
-      const url  = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href  = url;
-      link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.csv`;
-      link.click();
-      setStatus('✅ CSV gerado com sucesso.');
-    })
-    .catch(() => setStatus('❌ Erro ao gerar CSV.', 'erro'));
+  mostrarBarra('Gerando arquivo CSV...', 20, 'Processando dados...');
+
+  let pct = 20;
+  const intervalo = setInterval(() => {
+    if (pct < 85) {
+      pct += Math.random() * 8;
+      mostrarBarra('Gerando arquivo CSV...', Math.min(pct, 85), 'Processando dados...');
+    }
+  }, 3000);
+
+  try {
+    const resp = await fetch('/exportar/csv', { method: 'POST', body: fd });
+    clearInterval(intervalo);
+    mostrarBarra('Finalizando CSV...', 95);
+    const blob = await resp.blob();
+    mostrarBarra('Concluído!', 100, 'Download iniciado!');
+    setTimeout(esconderBarra, 2000);
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href  = url;
+    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.csv`;
+    link.click();
+    setStatus('✅ CSV gerado com sucesso.');
+  } catch(e) {
+    clearInterval(intervalo);
+    esconderBarra();
+    setStatus('❌ Erro ao gerar CSV.', 'erro');
+  }
+
+  btn.disabled = false;
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });

@@ -38,13 +38,25 @@
     <div></div>
   </div>
 
-  <!-- Progresso -->
+  <!-- Barra de progresso geral -->
+  <div id="barra-container" style="display:none;margin-top:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div style="font-size:12px;color:#555;font-weight:bold;" id="barra-label">Processando...</div>
+      <div style="font-size:12px;color:#1A5276;font-weight:bold;" id="barra-pct">0%</div>
+    </div>
+    <div style="background:#e0e0e0;border-radius:8px;height:16px;overflow:hidden;">
+      <div id="barra-progresso" style="background:#1A5276;height:100%;width:0%;border-radius:8px;transition:width 0.5s ease;"></div>
+    </div>
+    <div style="font-size:11px;color:#888;margin-top:4px;" id="barra-detalhe"></div>
+  </div>
+
+  <!-- Lista de progresso por ano -->
   <div id="progresso-container" style="display:none;margin-top:16px;">
     <div style="font-size:13px;font-weight:bold;color:#1A5276;margin-bottom:8px;">
       Progresso da geração:
     </div>
     <div id="lista-progresso" style="font-size:13px;line-height:2;"></div>
-    <div id="status-final" style="font-size:13px;margin-top:8px;"></div>
+    <div id="status-final" style="font-size:13px;margin-top:8px;font-weight:bold;"></div>
   </div>
 </div>
 
@@ -84,13 +96,21 @@
 </div>
 
 <script>
+function mostrarBarra(label, pct, detalhe='') {
+  document.getElementById('barra-container').style.display = 'block';
+  document.getElementById('barra-label').textContent = label;
+  document.getElementById('barra-pct').textContent = Math.round(pct) + '%';
+  document.getElementById('barra-progresso').style.width = pct + '%';
+  document.getElementById('barra-detalhe').textContent = detalhe;
+}
+
 async function exportarLAI() {
   const anoIni = parseInt(document.getElementById('ano_ini').value.trim());
   const anoFim = parseInt(document.getElementById('ano_fim').value.trim());
-  const lista  = document.getElementById('lista-progresso');
-  const status = document.getElementById('status-final');
-  const btn    = document.getElementById('btn-gerar');
-  const container = document.getElementById('progresso-container');
+  const lista      = document.getElementById('lista-progresso');
+  const statusFinal = document.getElementById('status-final');
+  const btn        = document.getElementById('btn-gerar');
+  const container  = document.getElementById('progresso-container');
 
   if (!anoIni || !anoFim) {
     alert('⚠️ Informe o período.');
@@ -103,21 +123,36 @@ async function exportarLAI() {
 
   btn.disabled = true;
   lista.innerHTML = '';
-  status.innerHTML = '';
+  statusFinal.innerHTML = '';
   container.style.display = 'block';
 
   const anos = [];
   for (let a = anoIni; a <= anoFim; a++) anos.push(a);
+  const total = anos.length;
+
+  mostrarBarra(`Preparando geração de ${total} ano(s)...`, 0, 'Aguarde...');
 
   let sucesso = 0;
   let falha   = 0;
 
-  for (const ano of anos) {
+  for (let i = 0; i < anos.length; i++) {
+    const ano = anos[i];
+    const pct = Math.round((i / total) * 100);
+
+    mostrarBarra(
+      `Gerando ano ${ano}... (${i + 1} de ${total})`,
+      pct,
+      `${sucesso} concluído(s) · ${falha} falha(s)`
+    );
+
     // Adiciona linha de progresso
     const linha = document.createElement('div');
     linha.id = `prog_${ano}`;
     linha.innerHTML = `<span class="spinner"></span> Gerando ${ano}...`;
     lista.appendChild(linha);
+
+    // Scroll automático para a linha atual
+    linha.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     try {
       const fd = new FormData();
@@ -128,6 +163,7 @@ async function exportarLAI() {
 
       if (!resp.ok) {
         linha.innerHTML = `❌ ${ano} — Erro ao gerar`;
+        linha.style.color = '#c0392b';
         falha++;
         continue;
       }
@@ -150,14 +186,17 @@ async function exportarLAI() {
       falha++;
     }
 
-    // Pausa de 1 segundo entre anos para não sobrecarregar
+    // Pausa de 1 segundo entre anos
     await new Promise(r => setTimeout(r, 1000));
   }
 
+  // Barra 100% ao finalizar
+  mostrarBarra('Concluído!', 100, `${sucesso} arquivo(s) gerado(s) com sucesso · ${falha} falha(s)`);
+
   if (falha === 0) {
-    status.innerHTML = `<span style="color:#1e8449;font-weight:bold;">🎉 Concluído! ${sucesso} arquivo(s) gerado(s) com sucesso!</span>`;
+    statusFinal.innerHTML = `<span style="color:#1e8449;">🎉 Concluído! ${sucesso} arquivo(s) gerado(s) com sucesso!</span>`;
   } else {
-    status.innerHTML = `<span style="color:#c0392b;font-weight:bold;">⚠️ Concluído com erros: ${sucesso} sucesso(s), ${falha} falha(s).</span>`;
+    statusFinal.innerHTML = `<span style="color:#c0392b;">⚠️ Concluído com erros: ${sucesso} sucesso(s), ${falha} falha(s).</span>`;
   }
 
   btn.disabled = false;
