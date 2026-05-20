@@ -5,15 +5,15 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 import pandas as pd
-import json, os, re, io, threading
+import json, os, re, io, threading, requests
 
 from database import (
-    init_db, get_conn, buscar_gtas, importar_dataframe,
+    init_db, get_conn, buscar_gtas, buscar_gtas_lai, importar_dataframe,
     arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf,
     verificar_aceite_termos, registrar_aceite_termos,
     resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade
 )
-from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado
+from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado, gerar_excel_lai
 
 app = Flask(__name__, 
             template_folder='.', 
@@ -24,6 +24,27 @@ app.secret_key = os.environ.get('SECRET_KEY', 'arkangelsk-2025-chave-secreta')
 UPLOAD_FOLDER = Path(__file__).parent / 'uploads_temp'
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
+
+# ── Configuração reCAPTCHA ─────────────────────────────────────
+RECAPTCHA_ATIVO      = os.environ.get('RECAPTCHA_ATIVO', 'false').lower() == 'true'
+RECAPTCHA_SITE_KEY   = os.environ.get('RECAPTCHA_SITE_KEY', '')
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
+RECAPTCHA_SCORE_MIN  = 0.5
+
+def verificar_recaptcha(token):
+    if not RECAPTCHA_ATIVO:
+        return True
+    if not token:
+        return False
+    try:
+        resp = requests.post('https://www.google.com/recaptcha/api/siteverify', data={
+            'secret': RECAPTCHA_SECRET_KEY,
+            'response': token
+        }, timeout=5)
+        resultado = resp.json()
+        return resultado.get('success') and resultado.get('score', 0) >= RECAPTCHA_SCORE_MIN
+    except:
+        return True
 
 # ── Controle de tentativas de login ───────────────────────────
 tentativas_login = {}
@@ -67,7 +88,7 @@ def login_required(f):
             if datetime.now() - ultimo_dt > timedelta(minutes=INATIVIDADE_MINUTOS):
                 session.clear()
                 return redirect(url_for('login', expirado=1))
-        if request.endpoint not in ['exportar_excel', 'exportar_csv']:
+        if request.endpoint not in ['exportar_excel', 'exportar_csv', 'exportar_lai']:
             session['ultimo_acesso'] = datetime.now().isoformat()
         return f(*args, **kwargs)
     return decorated
@@ -107,9 +128,17 @@ def login():
         minutos = segundos // 60
         segs    = segundos % 60
         erro = f"Acesso bloqueado por tentativas excessivas. Tente novamente em {minutos}m {segs}s."
-        return render_template('login.html', erro=erro, bloqueado=True, segundos=segundos)
+        return render_template('login.html', erro=erro, bloqueado=True, segundos=segundos,
+                               recaptcha_ativo=RECAPTCHA_ATIVO, recaptcha_site_key=RECAPTCHA_SITE_KEY)
 
     if request.method == 'POST':
+        token = request.form.get('recaptcha_token', '')
+        if not verificar_recaptcha(token):
+            erro = 'Verificação de segurança falhou. Tente novamente.'
+            return render_template('login.html', erro=erro, bloqueado=False, segundos=0,
+                                   expirado=expirado, recaptcha_ativo=RECAPTCHA_ATIVO,
+                                   recaptcha_site_key=RECAPTCHA_SITE_KEY)
+
         email = request.form.get('email','').strip().lower()
         senha = request.form.get('senha','')
         conn  = get_conn()
@@ -147,7 +176,9 @@ def login():
             else:
                 erro = f"E-mail ou senha incorretos. {restantes} tentativa(s) restante(s) antes do bloqueio."
 
-    return render_template('login.html', erro=erro, bloqueado=False, segundos=0, expirado=expirado)
+    return render_template('login.html', erro=erro, bloqueado=False, segundos=0,
+                           expirado=expirado, recaptcha_ativo=RECAPTCHA_ATIVO,
+                           recaptcha_site_key=RECAPTCHA_SITE_KEY)
 
 @app.route('/logout')
 def logout():
@@ -297,6 +328,40 @@ def exportar_csv():
     buf = gerar_csv_resultado(resultado, nome or emissor, cpf, usuario=get_usuario_session())
     nome_arquivo = f"GTA_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype='text/csv')
+
+# ── LAI ───────────────────────────────────────────────────────
+@app.route('/lai')
+@login_required
+@nivel_required('founder', 'master')
+def lai_page():
+    conn = get_conn()
+    conn.row_factory = None
+    row = conn.execute("SELECT MAX(ano) FROM gtas").fetchone()
+    conn.close()
+    ano_min = 2012
+    ano_max = row[0] if row else 2025
+    return render_template('lai.html', usuario=get_usuario_session(),
+                           ano_min=ano_min, ano_max=ano_max)
+
+@app.route('/exportar/lai', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def exportar_lai():
+    ano_ini = request.form.get('ano_ini', '').strip()
+    ano_fim = request.form.get('ano_fim', '').strip()
+
+    if not ano_ini or not ano_fim:
+        return jsonify({'erro': 'Informe o período'}), 400
+
+    try:
+        buf = gerar_excel_lai(None, ano_ini, ano_fim, usuario=get_usuario_session())
+        nome_arquivo = f"LAI_GTA_ADEPARA_{ano_ini}_{ano_fim}_{datetime.now().strftime('%Y%m%d')}.zip"
+        return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                         mimetype='application/zip')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f'Erro ao gerar arquivo: {str(e)}', 500
 
 @app.route('/auditoria')
 @login_required

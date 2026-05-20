@@ -41,7 +41,11 @@ input:disabled { background: #f5f5f5; cursor: not-allowed; }
   transition: background 0.15s;
 }
 .btn-manual:hover { background: #dce8f8; }
+.grecaptcha-badge { visibility: hidden; }
 </style>
+{% if recaptcha_ativo %}
+<script src="https://www.google.com/recaptcha/api.js?render={{ recaptcha_site_key }}"></script>
+{% endif %}
 </head>
 <body>
 <div class="login-box">
@@ -65,7 +69,8 @@ input:disabled { background: #f5f5f5; cursor: not-allowed; }
   <div class="erro">{{ erro }}</div>
   {% endif %}
 
-  <form method="POST">
+  <form method="POST" id="form-login">
+    <input type="hidden" name="recaptcha_token" id="recaptcha_token">
     <div class="form-group">
       <label>E-mail de acesso</label>
       <input type="email" name="email" placeholder="seu@email.gov.br" required autofocus
@@ -117,6 +122,19 @@ function atualizarContador() {
   setTimeout(atualizarContador, 1000);
 }
 atualizarContador();
+{% endif %}
+
+{% if recaptcha_ativo %}
+document.getElementById('form-login').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const form = this;
+  grecaptcha.ready(function() {
+    grecaptcha.execute('{{ recaptcha_site_key }}', {action: 'login'}).then(function(token) {
+      document.getElementById('recaptcha_token').value = token;
+      form.submit();
+    });
+  });
+});
 {% endif %}
 </script>
 </body>

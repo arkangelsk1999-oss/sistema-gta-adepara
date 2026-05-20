@@ -177,6 +177,9 @@ tbody tr:hover td { background: #f0f4fb; }
   <a href="/auditoria"     class="{{ 'ativo' if '/auditoria' in request.path }}">📋 Auditoria</a>
   <a href="/ip-localidade" class="{{ 'ativo' if '/ip-localidade' in request.path }}">🌐 IP / Localidade</a>
   <a href="/importar"      class="{{ 'ativo' if '/importar' in request.path }}">📂 Importar dados</a>
+  <div class="sep"></div>
+  <div class="label">Acesso à Informação</div>
+  <a href="/lai"           class="{{ 'ativo' if '/lai' in request.path }}">📜 Exportar LAI</a>
   {% endif %}
 </div>
 

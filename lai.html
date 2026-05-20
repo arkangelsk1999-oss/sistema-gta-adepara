@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Exportar LAI{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>📜 Exportação — Lei de Acesso à Informação (Lei nº 12.527/2011)</h2>
+
+  <div class="alerta alerta-info" style="margin-bottom:14px;">
+    Esta exportação atende pedidos LAI em conformidade com a Lei nº 12.527/2011 e a Lei nº 13.709/2018 (LGPD).
+    Dados de pessoas físicas são anonimizados. Dados de pessoas jurídicas são mantidos por serem públicos.
+  </div>
+
+  <div class="alerta alerta-aviso" style="margin-bottom:14px;">
+    ⚠️ A base de dados disponível compreende GTAs emitidas no Pará de
+    <strong>{{ ano_min }}</strong> a <strong>{{ ano_max }}</strong>.
+    Pedidos fora deste intervalo não terão dados.
+  </div>
+
+  <div class="alerta alerta-aviso" style="margin-bottom:14px;">
+    📦 O resultado será um arquivo <strong>ZIP</strong> contendo um Excel por ano.
+    Para períodos longos, o processamento pode levar vários minutos — aguarde sem fechar a janela.
+  </div>
+
+  <div class="form-row col4">
+    <div>
+      <label>Ano inicial</label>
+      <input type="number" id="ano_ini" value="{{ ano_min }}" min="{{ ano_min }}" max="{{ ano_max }}">
+    </div>
+    <div>
+      <label>Ano final</label>
+      <input type="number" id="ano_fim" value="{{ ano_max }}" min="{{ ano_min }}" max="{{ ano_max }}">
+    </div>
+    <div style="align-self:end">
+      <button class="btn btn-verde" id="btn-gerar" style="width:100%;padding:9px" onclick="exportarLAI()">
+        📥 Gerar ZIP LAI
+      </button>
+    </div>
+    <div></div>
+  </div>
+
+  <div id="status-lai" style="font-size:13px;color:#666;min-height:20px;margin-top:4px;"></div>
+</div>
+
+<div class="card">
+  <h2>📋 Campos incluídos na exportação</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+    <div>✅ Número da GTA</div>
+    <div>✅ Data de emissão</div>
+    <div>✅ Município de origem</div>
+    <div>✅ UF de origem</div>
+    <div>✅ Nome do produtor de origem (anonimizado se pessoa física)</div>
+    <div>✅ CPF/CNPJ de origem (CPF anonimizado, CNPJ mantido)</div>
+    <div>✅ Nome do estabelecimento de origem (anonimizado se pessoa física)</div>
+    <div>✅ Município de destino</div>
+    <div>✅ UF de destino</div>
+    <div>✅ Nome do produtor de destino (anonimizado se pessoa física)</div>
+    <div>✅ CPF/CNPJ de destino (CPF anonimizado, CNPJ mantido)</div>
+    <div>✅ Nome do estabelecimento de destino (anonimizado se pessoa física)</div>
+    <div>✅ Código do estabelecimento de destino</div>
+    <div>✅ Finalidade do transporte</div>
+    <div>✅ Espécie</div>
+    <div>✅ Total de animais</div>
+    <div>✅ Detalhamento bovinos por faixa etária</div>
+    <div>✅ Meio de transporte</div>
+    <div>✅ Tipo de trânsito</div>
+  </div>
+
+  <div style="margin-top:14px;">
+    <div class="alerta alerta-erro" style="font-size:12px;">
+      ❌ <strong>Campos omitidos (LGPD):</strong>
+      Usuário emissor da GTA.
+      CPF de produtores individuais (pessoas físicas) é substituído por <strong>***ANONIMIZADO***</strong>.
+      Nome do produtor e nome do estabelecimento vinculados a CPF são igualmente substituídos por <strong>***ANONIMIZADO***</strong>.
+      Dados de pessoas jurídicas (CNPJ e nome do estabelecimento) são mantidos por serem públicos.
+    </div>
+  </div>
+</div>
+
+<script>
+async function exportarLAI() {
+  const anoIni = document.getElementById('ano_ini').value.trim();
+  const anoFim = document.getElementById('ano_fim').value.trim();
+  const status = document.getElementById('status-lai');
+  const btn    = document.getElementById('btn-gerar');
+
+  if (!anoIni || !anoFim) {
+    status.innerHTML = '<span style="color:#c0392b">⚠️ Informe o período.</span>';
+    return;
+  }
+  if (parseInt(anoIni) > parseInt(anoFim)) {
+    status.innerHTML = '<span style="color:#c0392b">⚠️ Ano inicial não pode ser maior que o ano final.</span>';
+    return;
+  }
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> Gerando arquivos ano a ano... Não feche esta janela. Pode demorar vários minutos.';
+
+  const fd = new FormData();
+  fd.append('ano_ini', anoIni);
+  fd.append('ano_fim', anoFim);
+
+  try {
+    const resp = await fetch('/exportar/lai', { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      status.innerHTML = `<span style="color:#c0392b">❌ Erro: ${txt}</span>`;
+      btn.disabled = false;
+      return;
+    }
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href  = url;
+    link.download = `LAI_GTA_ADEPARA_${anoIni}_${anoFim}.zip`;
+    link.click();
+    status.innerHTML = `<span style="color:#1e8449">✅ ZIP gerado com sucesso! Contém um Excel por ano de ${anoIni} a ${anoFim}.</span>`;
+  } catch(e) {
+    status.innerHTML = `<span style="color:#c0392b">❌ Falha na conexão: ${e.message}</span>`;
+  }
+  btn.disabled = false;
+}
+</script>
+{% endblock %}

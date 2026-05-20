@@ -25,9 +25,18 @@ def norm_cpf(val):
     if not val: return ''
     s = str(val).strip()
     if re.match(r'^[\d,\.]+[Ee][+\-]?\d+$', s):
-        try: return str(int(float(s.replace(',','.'))))
-        except: return s
-    return re.sub(r'[^\d]', '', s)
+        try:
+            s = str(int(float(s.replace(',','.'))))
+        except:
+            return s
+    s = re.sub(r'[^\d]', '', s)
+    if not s:
+        return ''
+    s_sem_zero = s.lstrip('0') or '0'
+    if len(s_sem_zero) <= 11:
+        return s_sem_zero.zfill(11)
+    else:
+        return s_sem_zero.zfill(14)
 
 def get_conn():
     conn = sqlite3.connect(str(DB_PATH))
@@ -139,7 +148,6 @@ def init_db():
         ip TEXT
     )''')
 
-    # ── NOVO: tabela de mapeamento IP → Localidade ────────────
     c.execute('''CREATE TABLE IF NOT EXISTS ip_localidade (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ip TEXT NOT NULL UNIQUE,
@@ -212,9 +220,7 @@ def registrar_aceite_termos(usuario_id, usuario_nome, usuario_cpf, ip):
     conn.close()
 
 
-# ── NOVO: funções de IP/Localidade ────────────────────────────
 def resolver_localidade(ip):
-    """Retorna a localidade mapeada para o IP, ou o próprio IP se não mapeado."""
     conn = get_conn()
     row = conn.execute(
         "SELECT localidade FROM ip_localidade WHERE ip=?", (ip,)
@@ -398,9 +404,13 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
     for row in rows:
         ano   = row['ano']
         dados = _limpar_nan(json.loads(row['dados_json']))
-        is_orig    = (nome    and _nome_confere(nome, row['orig_nome']))    or (cpf and cpf == row['orig_cpf'])
-        is_dest    = (nome    and _nome_confere(nome, row['dest_nome']))    or (cpf and cpf == row['dest_cpf'])
-        is_emissor = (emissor and _nome_confere(emissor, row['emissor_nome']))
+
+        cpf_orig = norm_cpf(row['orig_cpf'] or '')
+        cpf_dest = norm_cpf(row['dest_cpf'] or '')
+
+        is_orig    = (cpf and cpf == cpf_orig) or (nome and _nome_confere(nome, row['orig_nome']))
+        is_dest    = (cpf and cpf == cpf_dest) or (nome and _nome_confere(nome, row['dest_nome']))
+        is_emissor = emissor and _nome_confere(emissor, row['emissor_nome'])
 
         if ano not in resultado:
             resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
@@ -411,6 +421,34 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
             resultado[ano]['destino'].append(dados)
         elif is_emissor:
             resultado[ano]['origem'].append(dados)
+        else:
+            resultado[ano]['origem'].append(dados)
+
+    return resultado
+
+
+def buscar_gtas_lai(ano_ini, ano_fim):
+    """
+    Busca todas as GTAs do período para exportação LAI.
+    Retorna um dicionário por ano com lista de registros.
+    Não requer critério de busca — varre todo o período.
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM gtas WHERE ano >= ? AND ano <= ? ORDER BY ano",
+        (int(ano_ini), int(ano_fim))
+    ).fetchall()
+    conn.close()
+
+    resultado = {}
+    for row in rows:
+        ano   = row['ano']
+        dados = _limpar_nan(json.loads(row['dados_json']))
+
+        if ano not in resultado:
+            resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
+
+        resultado[ano]['origem'].append(dados)
 
     return resultado
 
