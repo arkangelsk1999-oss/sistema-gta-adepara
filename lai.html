@@ -17,8 +17,8 @@
   </div>
 
   <div class="alerta alerta-aviso" style="margin-bottom:14px;">
-    📦 O resultado será um arquivo <strong>ZIP</strong> contendo um Excel por ano.
-    Para períodos longos, o processamento pode levar vários minutos — aguarde sem fechar a janela.
+    📦 Os arquivos serão gerados e baixados <strong>um ano por vez</strong>.
+    Acompanhe o progresso abaixo. Não feche esta janela durante o processamento.
   </div>
 
   <div class="form-row col4">
@@ -32,13 +32,20 @@
     </div>
     <div style="align-self:end">
       <button class="btn btn-verde" id="btn-gerar" style="width:100%;padding:9px" onclick="exportarLAI()">
-        📥 Gerar ZIP LAI
+        📥 Gerar LAI ano a ano
       </button>
     </div>
     <div></div>
   </div>
 
-  <div id="status-lai" style="font-size:13px;color:#666;min-height:20px;margin-top:4px;"></div>
+  <!-- Progresso -->
+  <div id="progresso-container" style="display:none;margin-top:16px;">
+    <div style="font-size:13px;font-weight:bold;color:#1A5276;margin-bottom:8px;">
+      Progresso da geração:
+    </div>
+    <div id="lista-progresso" style="font-size:13px;line-height:2;"></div>
+    <div id="status-final" style="font-size:13px;margin-top:8px;"></div>
+  </div>
 </div>
 
 <div class="card">
@@ -78,45 +85,81 @@
 
 <script>
 async function exportarLAI() {
-  const anoIni = document.getElementById('ano_ini').value.trim();
-  const anoFim = document.getElementById('ano_fim').value.trim();
-  const status = document.getElementById('status-lai');
+  const anoIni = parseInt(document.getElementById('ano_ini').value.trim());
+  const anoFim = parseInt(document.getElementById('ano_fim').value.trim());
+  const lista  = document.getElementById('lista-progresso');
+  const status = document.getElementById('status-final');
   const btn    = document.getElementById('btn-gerar');
+  const container = document.getElementById('progresso-container');
 
   if (!anoIni || !anoFim) {
-    status.innerHTML = '<span style="color:#c0392b">⚠️ Informe o período.</span>';
+    alert('⚠️ Informe o período.');
     return;
   }
-  if (parseInt(anoIni) > parseInt(anoFim)) {
-    status.innerHTML = '<span style="color:#c0392b">⚠️ Ano inicial não pode ser maior que o ano final.</span>';
+  if (anoIni > anoFim) {
+    alert('⚠️ Ano inicial não pode ser maior que o ano final.');
     return;
   }
 
   btn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Gerando arquivos ano a ano... Não feche esta janela. Pode demorar vários minutos.';
+  lista.innerHTML = '';
+  status.innerHTML = '';
+  container.style.display = 'block';
 
-  const fd = new FormData();
-  fd.append('ano_ini', anoIni);
-  fd.append('ano_fim', anoFim);
+  const anos = [];
+  for (let a = anoIni; a <= anoFim; a++) anos.push(a);
 
-  try {
-    const resp = await fetch('/exportar/lai', { method: 'POST', body: fd });
-    if (!resp.ok) {
-      const txt = await resp.text();
-      status.innerHTML = `<span style="color:#c0392b">❌ Erro: ${txt}</span>`;
-      btn.disabled = false;
-      return;
+  let sucesso = 0;
+  let falha   = 0;
+
+  for (const ano of anos) {
+    // Adiciona linha de progresso
+    const linha = document.createElement('div');
+    linha.id = `prog_${ano}`;
+    linha.innerHTML = `<span class="spinner"></span> Gerando ${ano}...`;
+    lista.appendChild(linha);
+
+    try {
+      const fd = new FormData();
+      fd.append('ano_ini', ano);
+      fd.append('ano_fim', ano);
+
+      const resp = await fetch('/exportar/lai', { method: 'POST', body: fd });
+
+      if (!resp.ok) {
+        linha.innerHTML = `❌ ${ano} — Erro ao gerar`;
+        falha++;
+        continue;
+      }
+
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href  = url;
+      link.download = `LAI_GTA_ADEPARA_${ano}.zip`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      linha.innerHTML = `✅ ${ano} — Gerado e baixado com sucesso!`;
+      linha.style.color = '#1e8449';
+      sucesso++;
+
+    } catch(e) {
+      linha.innerHTML = `❌ ${ano} — Falha: ${e.message}`;
+      linha.style.color = '#c0392b';
+      falha++;
     }
-    const blob = await resp.blob();
-    const url  = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href  = url;
-    link.download = `LAI_GTA_ADEPARA_${anoIni}_${anoFim}.zip`;
-    link.click();
-    status.innerHTML = `<span style="color:#1e8449">✅ ZIP gerado com sucesso! Contém um Excel por ano de ${anoIni} a ${anoFim}.</span>`;
-  } catch(e) {
-    status.innerHTML = `<span style="color:#c0392b">❌ Falha na conexão: ${e.message}</span>`;
+
+    // Pausa de 1 segundo entre anos para não sobrecarregar
+    await new Promise(r => setTimeout(r, 1000));
   }
+
+  if (falha === 0) {
+    status.innerHTML = `<span style="color:#1e8449;font-weight:bold;">🎉 Concluído! ${sucesso} arquivo(s) gerado(s) com sucesso!</span>`;
+  } else {
+    status.innerHTML = `<span style="color:#c0392b;font-weight:bold;">⚠️ Concluído com erros: ${sucesso} sucesso(s), ${falha} falha(s).</span>`;
+  }
+
   btn.disabled = false;
 }
 </script>
