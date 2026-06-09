@@ -60,8 +60,17 @@ body { font-family: Arial, sans-serif; font-size: 14px; background: #f0f0f0; col
   color: rgba(255,255,255,0.8); text-decoration: none; font-size: 13px; transition: all 0.15s;
 }
 .sidebar a:hover, .sidebar a.ativo { background: #1a5276; color: white; }
+.sidebar a.modulo-ativo { background: #1a5276; color: white; border-left: 3px solid #f39c12; }
+.sidebar a.em-breve { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 .sidebar .sep { border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0; }
 .sidebar .label { font-size: 10px; color: rgba(255,255,255,0.4); padding: 8px 20px 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.sidebar .badge-modulo {
+  font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: bold; margin-left: auto;
+}
+.badge-azul   { background: #2e86c1; color: white; }
+.badge-amarelo{ background: #f39c12; color: white; }
+.badge-verde  { background: #1e8449; color: white; }
+.badge-cinza  { background: #7f8c8d; color: white; }
 
 .conteudo { margin-left: 200px; margin-top: 56px; padding: 24px; min-height: calc(100vh - 56px); }
 
@@ -79,7 +88,7 @@ body { font-family: Arial, sans-serif; font-size: 14px; background: #f0f0f0; col
 .btn-cinza:hover { background: #555; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-input[type=text], input[type=email], input[type=password], input[type=date], select {
+input[type=text], input[type=email], input[type=password], input[type=date], input[type=month], select {
   width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px;
   font-size: 14px; font-family: Arial;
 }
@@ -155,7 +164,7 @@ tbody tr:hover td { background: #f0f4fb; }
 
 <div class="topbar">
   <img src="/arkangelsk_logo.png" class="logo-ark" alt="Arkangelsk" onerror="this.style.display='none'">
-  <span class="titulo">Sistema de Consulta a Histórico de Emissões de GTAs — ADEPARÁ</span>
+  <span class="titulo">Sistema de Consulta a Histórico de Emissões — ADEPARÁ</span>
 
   <div class="usuario-info" onclick="toggleMenuUsuario()" id="btn-usuario">
     {{ usuario.nome }} ▾<br>
@@ -168,8 +177,23 @@ tbody tr:hover td { background: #f0f4fb; }
 </div>
 
 <div class="sidebar">
-  <div class="label">Principal</div>
-  <a href="/" class="{{ 'ativo' if request.path == '/' }}">🔍 Consulta</a>
+
+  <!-- MÓDULO GTA 2012-2025 -->
+  <div class="label">Módulos</div>
+  <a href="/" class="{{ 'modulo-ativo' if request.path == '/' or (request.path != '/gta2026' and not request.path.startswith('/gta2026') and not request.path.startswith('/gtv')) else '' }}">
+    🔵 GTA 2012–2025
+    <span class="badge-modulo badge-azul">ATIVO</span>
+  </a>
+  <a href="/gta2026" class="{{ 'modulo-ativo' if request.path.startswith('/gta2026') else '' }}">
+    🟡 GTA 2026
+    <span class="badge-modulo badge-amarelo">2026</span>
+  </a>
+  <a href="/gtv" class="{{ 'modulo-ativo' if request.path.startswith('/gtv') else '' }}">
+    🟢 GTV
+    <span class="badge-modulo badge-verde">GTV</span>
+  </a>
+
+  <!-- ADMINISTRAÇÃO -->
   {% if usuario.nivel in ['founder', 'master'] %}
   <div class="sep"></div>
   <div class="label">Administração</div>
@@ -179,8 +203,11 @@ tbody tr:hover td { background: #f0f4fb; }
   <a href="/importar"      class="{{ 'ativo' if '/importar' in request.path }}">📂 Importar dados</a>
   <div class="sep"></div>
   <div class="label">Acesso à Informação</div>
-  <a href="/lai"           class="{{ 'ativo' if '/lai' in request.path }}">📜 Exportar LAI</a>
+  <a href="/lai"           class="{{ 'ativo' if request.path == '/lai' }}">📜 LAI 2012–2025</a>
+  <a href="/gta2026/lai"   class="{{ 'ativo' if request.path == '/gta2026/lai' }}">📜 LAI 2026</a>
+  <a href="/gtv/lai"      class="{{ 'ativo' if request.path == '/gtv/lai' }}">📜 LAI GTV</a>
   {% endif %}
+
 </div>
 
 <div class="conteudo">

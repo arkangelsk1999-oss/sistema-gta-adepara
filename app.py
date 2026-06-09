@@ -14,7 +14,22 @@ from database import (
     resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade
 )
 from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado, gerar_excel_lai
-
+from database_gta2026 import (
+    init_db_2026, buscar_gtas_2026, buscar_gtas_2026_lai,
+    stats_2026, arquivo_ja_importado_2026, importar_dataframe_2026,
+    listar_arquivos_2026
+)
+from relatorio_gta2026 import (
+    gerar_excel_2026, gerar_csv_2026, gerar_excel_lai_2026
+)
+from database_gtv import (
+    init_db_gtv, buscar_gtv, buscar_gtv_lai,
+    stats_gtv, arquivo_ja_importado_gtv, importar_dataframe_gtv,
+    listar_arquivos_gtv
+)
+from relatorio_gtv import (
+    gerar_excel_gtv, gerar_csv_gtv, gerar_excel_lai_gtv
+)
 app = Flask(__name__, 
             template_folder='.', 
             static_folder='.',
@@ -483,6 +498,11 @@ def importar_page():
 
 status_importacao = {}
 
+# ══════════════════════════════════════════════════════════════
+# SUBSTITUI a função upload_arquivo() existente no app.py
+# Detecta pelo nome do arquivo: GTA → gta2026.db, GTV → gtv.db
+# ══════════════════════════════════════════════════════════════
+
 @app.route('/importar/upload', methods=['POST'])
 @login_required
 @nivel_required('founder', 'master')
@@ -491,41 +511,56 @@ def upload_arquivo():
         return jsonify({'erro': 'Nenhum arquivo enviado'}), 400
 
     f    = request.files['arquivo']
-    nome = secure_filename(f.name if hasattr(f,'name') else f.filename)
     nome = f.filename
     ext  = nome.rsplit('.', 1)[-1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
         return jsonify({'erro': 'Formato não suportado. Use CSV ou XLSX'}), 400
-    if arquivo_ja_importado(nome):
-        return jsonify({'erro': f'Arquivo "{nome}" já foi importado anteriormente'}), 400
+
+    # ── Detecta destino pelo nome do arquivo ──
+    nome_upper = nome.upper()
+    if 'GTV' in nome_upper:
+        destino = 'gtv'
+    elif 'GTA' in nome_upper:
+        destino = 'gta2026'
+    else:
+        return jsonify({'erro': 'Não foi possível identificar o destino pelo nome do arquivo. '
+                                'O nome deve conter "GTA" ou "GTV".'}), 400
+
+    # ── Verifica duplicata ──
+    if destino == 'gta2026' and arquivo_ja_importado_2026(nome):
+        return jsonify({'erro': f'Arquivo "{nome}" já foi importado anteriormente (GTA 2026)'}), 400
+    # GTV: verificação será adicionada quando o módulo GTV for implementado
 
     caminho = UPLOAD_FOLDER / nome
     f.save(str(caminho))
 
     job_id = nome
-    status_importacao[job_id] = {'status': 'processando', 'progresso': 0, 'msg': 'Iniciando...'}
+    status_importacao[job_id] = {'status': 'processando', 'progresso': 0,
+                                  'msg': f'Iniciando importação ({destino.upper()})...'}
 
     def processar():
         try:
-            ano = extrair_ano(nome)
             status_importacao[job_id]['msg'] = 'Lendo arquivo...'
             if ext == 'csv':
-                df = pd.read_csv(str(caminho), encoding='latin-1', sep=';', dtype=str, low_memory=False)
+                df = pd.read_csv(str(caminho), encoding='utf-8', sep=';',
+                                 dtype=str, keep_default_na=False)
             else:
                 abas = pd.read_excel(str(caminho), sheet_name=None, dtype=str)
                 df   = pd.concat(abas.values(), ignore_index=True)
 
             total = len(df)
-            status_importacao[job_id]['msg'] = f'Importando {total:,} linhas...'
+            status_importacao[job_id]['msg'] = f'Importando {total:,} linhas para {destino.upper()}...'
             status_importacao[job_id]['progresso'] = 30
 
-            linhas = importar_dataframe(df, ano, nome)
-            registrar_arquivo(nome, ano, linhas)
+            if destino == 'gta2026':
+                linhas = importar_dataframe_2026(df, nome)
+            else:
+                linhas = importar_dataframe_gtv(df, nome)
 
             status_importacao[job_id] = {
                 'status': 'concluido', 'progresso': 100,
-                'msg': f'✅ {linhas:,} linhas importadas com sucesso!'
+                'msg': f'✅ {linhas:,} linhas importadas com sucesso em {destino.upper()}!'
             }
         except Exception as e:
             status_importacao[job_id] = {
@@ -536,7 +571,7 @@ def upload_arquivo():
                 caminho.unlink()
 
     threading.Thread(target=processar, daemon=True).start()
-    return jsonify({'job_id': job_id, 'ok': True})
+    return jsonify({'job_id': job_id, 'ok': True, 'destino': destino})
 
 @app.route('/importar/status/<job_id>')
 @login_required
@@ -624,6 +659,317 @@ def ip_localidade_excluir(id):
     return jsonify({'ok': True})
 
 init_db()
+init_db_2026()
+init_db_gtv()
+
+# ══════════════════════════════════════════════════════════════
+# MÓDULO GTA 2026
+# Adicionar estas importações no topo do app.py:
+#
+# from database_gta2026 import (
+#     init_db_2026, buscar_gtas_2026, buscar_gtas_2026_lai,
+#     stats_2026, arquivo_ja_importado_2026, importar_dataframe_2026,
+#     listar_arquivos_2026
+# )
+# from relatorio_gta2026 import (
+#     gerar_excel_2026, gerar_csv_2026, gerar_excel_lai_2026
+# )
+#
+# E adicionar init_db_2026() junto ao init_db() no final do arquivo.
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/gta2026')
+@login_required
+def gta2026_index():
+    return render_template('index_gta2026.html',
+                           usuario=get_usuario_session(),
+                           stats=stats_2026())
+
+@app.route('/gta2026/buscar', methods=['POST'])
+@login_required
+def gta2026_buscar():
+    nome    = request.form.get('nome', '').strip()
+    cpf     = request.form.get('cpf', '').strip()
+    emissor = request.form.get('emissor', '').strip()
+    mes_ini = request.form.get('mes_ini', '').strip()
+    mes_fim = request.form.get('mes_fim', '').strip()
+
+    if not nome and not cpf and not emissor:
+        return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
+
+    try:
+        resultado = buscar_gtas_2026(
+            nome=nome, cpf=cpf, emissor=emissor,
+            mes_ini=mes_ini or None,
+            mes_fim=mes_fim or None
+        )
+
+        total = sum(
+            len(v.get('origem', [])) + len(v.get('destino', []))
+            for v in resultado.values()
+        )
+
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        localidade = resolver_localidade(ip)
+        registrar_auditoria(
+            usuario=get_usuario_session(),
+            ip=ip,
+            localidade=localidade,
+            cpf_pesquisado=cpf,
+            nome_pesquisado=nome.upper() or emissor.upper(),
+            total=total
+        )
+
+        if not resultado or total == 0:
+            return jsonify({'vazio': True, 'total': 0})
+
+        resumo = {
+            '2026': {
+                'origem':  len(resultado.get('2026', {}).get('origem', [])),
+                'destino': len(resultado.get('2026', {}).get('destino', [])),
+            }
+        }
+
+        # Preview — primeiros 10 de cada tipo
+        orig  = resultado.get('2026', {}).get('origem', [])[:10]
+        dest  = resultado.get('2026', {}).get('destino', [])[:10]
+        cols  = resultado.get('2026', {}).get('colunas', [])
+        preview = {'2026': {'colunas': cols, 'origem': orig, 'destino': dest}}
+
+        return jsonify({
+            'total':   total,
+            'resumo':  resumo,
+            'preview': preview,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/gta2026/exportar/excel', methods=['POST'])
+@login_required
+def gta2026_exportar_excel():
+    nome    = request.form.get('nome', '')
+    cpf     = request.form.get('cpf', '')
+    emissor = request.form.get('emissor', '')
+    mes_ini = request.form.get('mes_ini', '')
+    mes_fim = request.form.get('mes_fim', '')
+
+    resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
+                                  mes_ini=mes_ini or None, mes_fim=mes_fim or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf = gerar_excel_2026(resultado, nome or emissor, cpf, usuario=get_usuario_session())
+    nome_arquivo = f"GTA2026_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/gta2026/exportar/csv', methods=['POST'])
+@login_required
+@nivel_required('founder')
+def gta2026_exportar_csv():
+    nome    = request.form.get('nome', '')
+    cpf     = request.form.get('cpf', '')
+    emissor = request.form.get('emissor', '')
+    mes_ini = request.form.get('mes_ini', '')
+    mes_fim = request.form.get('mes_fim', '')
+
+    resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
+                                  mes_ini=mes_ini or None, mes_fim=mes_fim or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf = gerar_csv_2026(resultado, nome or emissor, cpf, usuario=get_usuario_session())
+    nome_arquivo = f"GTA2026_{(nome or cpf or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype='text/csv')
+
+
+@app.route('/gta2026/lai')
+@login_required
+@nivel_required('founder', 'master')
+def gta2026_lai_page():
+    return render_template('lai_gta2026.html',
+                           usuario=get_usuario_session(),
+                           stats=stats_2026())
+
+
+@app.route('/gta2026/exportar/lai', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def gta2026_exportar_lai():
+    try:
+        registros = buscar_gtas_2026_lai()
+        if not registros:
+            return 'Sem dados disponíveis', 404
+
+        buf = gerar_excel_lai_2026(registros, usuario=get_usuario_session())
+        nome_arquivo = f"LAI_GTA_2026_{datetime.now().strftime('%Y%m%d')}.zip"
+        return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                         mimetype='application/zip')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f'Erro ao gerar LAI: {str(e)}', 500
+# ══════════════════════════════════════════════════════════════
+# MÓDULO GTV
+# Adicionar estas importações no topo do app.py
+# (junto às importações do GTA 2026):
+#
+# from database_gtv import (
+#     init_db_gtv, buscar_gtv, buscar_gtv_lai,
+#     stats_gtv, arquivo_ja_importado_gtv, importar_dataframe_gtv,
+#     listar_arquivos_gtv
+# )
+# from relatorio_gtv import (
+#     gerar_excel_gtv, gerar_csv_gtv, gerar_excel_lai_gtv
+# )
+#
+# E adicionar init_db_gtv() junto ao init_db_2026() no final.
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/gtv')
+@login_required
+def gtv_index():
+    return render_template('index_gtv.html',
+                           usuario=get_usuario_session(),
+                           stats=stats_gtv())
+
+@app.route('/gtv/buscar', methods=['POST'])
+@login_required
+def gtv_buscar():
+    nome    = request.form.get('nome', '').strip()
+    emissor = request.form.get('emissor', '').strip()
+    cultura = request.form.get('cultura', '').strip()
+    mes_ini = request.form.get('mes_ini', '').strip()
+    mes_fim = request.form.get('mes_fim', '').strip()
+
+    if not nome and not emissor and not cultura:
+        return jsonify({'erro': 'Informe procedência/destinatário, emissor ou cultura'}), 400
+
+    try:
+        # Se busca por cultura, adiciona ao nome para o FTS
+        termo_busca = nome or cultura
+        resultado = buscar_gtv(
+            nome=termo_busca, emissor=emissor,
+            mes_ini=mes_ini or None,
+            mes_fim=mes_fim or None
+        )
+
+        total = sum(
+            len(v.get('origem', [])) + len(v.get('destino', []))
+            for v in resultado.values()
+        )
+
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        localidade = resolver_localidade(ip)
+        registrar_auditoria(
+            usuario=get_usuario_session(),
+            ip=ip,
+            localidade=localidade,
+            cpf_pesquisado='',
+            nome_pesquisado=termo_busca.upper() or emissor.upper(),
+            total=total
+        )
+
+        if not resultado or total == 0:
+            return jsonify({'vazio': True, 'total': 0})
+
+        resumo = {
+            'gtv': {
+                'origem':  len(resultado.get('gtv', {}).get('origem', [])),
+                'destino': len(resultado.get('gtv', {}).get('destino', [])),
+            }
+        }
+
+        orig  = resultado.get('gtv', {}).get('origem', [])[:10]
+        dest  = resultado.get('gtv', {}).get('destino', [])[:10]
+        cols  = resultado.get('gtv', {}).get('colunas', [])
+        preview = {'gtv': {'colunas': cols, 'origem': orig, 'destino': dest}}
+
+        return jsonify({'total': total, 'resumo': resumo, 'preview': preview})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': str(e)}), 500
+
+
+@app.route('/gtv/exportar/excel', methods=['POST'])
+@login_required
+def gtv_exportar_excel():
+    nome    = request.form.get('nome', '')
+    emissor = request.form.get('emissor', '')
+    cultura = request.form.get('cultura', '')
+    mes_ini = request.form.get('mes_ini', '')
+    mes_fim = request.form.get('mes_fim', '')
+
+    termo_busca = nome or cultura
+    resultado = buscar_gtv(nome=termo_busca, emissor=emissor,
+                            mes_ini=mes_ini or None, mes_fim=mes_fim or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf = gerar_excel_gtv(resultado, termo_busca or emissor, usuario=get_usuario_session())
+    nome_arquivo = f"GTV_{(termo_busca or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/gtv/exportar/csv', methods=['POST'])
+@login_required
+@nivel_required('founder')
+def gtv_exportar_csv():
+    nome    = request.form.get('nome', '')
+    emissor = request.form.get('emissor', '')
+    cultura = request.form.get('cultura', '')
+    mes_ini = request.form.get('mes_ini', '')
+    mes_fim = request.form.get('mes_fim', '')
+
+    termo_busca = nome or cultura
+    resultado = buscar_gtv(nome=termo_busca, emissor=emissor,
+                            mes_ini=mes_ini or None, mes_fim=mes_fim or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf = gerar_csv_gtv(resultado, termo_busca or emissor, usuario=get_usuario_session())
+    nome_arquivo = f"GTV_{(termo_busca or emissor).replace(' ','_')[:30]}_{datetime.now().strftime('%Y%m%d')}.csv"
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype='text/csv')
+
+
+@app.route('/gtv/lai')
+@login_required
+@nivel_required('founder', 'master')
+def gtv_lai_page():
+    return render_template('lai_gtv.html',
+                           usuario=get_usuario_session(),
+                           stats=stats_gtv())
+
+
+@app.route('/gtv/exportar/lai', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def gtv_exportar_lai():
+    try:
+        registros = buscar_gtv_lai()
+        if not registros:
+            return 'Sem dados disponíveis', 404
+
+        buf = gerar_excel_lai_gtv(registros, usuario=get_usuario_session())
+        nome_arquivo = f"LAI_GTV_{datetime.now().strftime('%Y%m%d')}.zip"
+        return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                         mimetype='application/zip')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f'Erro ao gerar LAI GTV: {str(e)}', 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

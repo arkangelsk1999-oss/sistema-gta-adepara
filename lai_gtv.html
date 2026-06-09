@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}LAI — GTVs{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>📜 Exportação LAI — Guias de Trânsito Vegetal (GTV)</h2>
+
+  <div class="alerta alerta-info" style="margin-bottom:14px">
+    Base legal: <strong>Lei 12.527/2011 (LAI)</strong><br>
+    GTVs não contêm CPF de pessoa física — anonimização LGPD não aplicável.
+  </div>
+
+  <div class="alerta alerta-aviso" style="margin-bottom:14px">
+    Total disponível: <strong>{{ stats.total|default(0)|int }} registros</strong>
+    {% if stats.data_ini %}({{ stats.data_ini }} a {{ stats.data_fim }}){% endif %}
+    — {{ stats.arquivos|default(0) }} arquivo(s) importado(s)
+  </div>
+
+  <p style="margin-bottom:16px; color:#555; font-size:13px">
+    Clique em <strong>Gerar LAI</strong> para exportar todos os registros disponíveis em formato Excel, compactado em ZIP.
+  </p>
+
+  <button class="btn btn-azul" id="btn-gerar" onclick="gerarLai()">📥 Gerar LAI GTV</button>
+</div>
+
+<div id="area-progresso" style="display:none">
+  <div class="card">
+    <h2>Gerando arquivo...</h2>
+    <div class="alerta alerta-info">
+      <span class="spinner"></span>
+      <span id="msg-progresso">Preparando dados...</span>
+    </div>
+    <div class="progress-wrap" style="margin-top:10px">
+      <div class="progress-bar" id="barra-progresso" style="width:0%"></div>
+    </div>
+  </div>
+</div>
+
+<div id="area-erro" style="display:none">
+  <div class="alerta alerta-erro" id="msg-erro"></div>
+</div>
+
+<script>
+function gerarLai() {
+  document.getElementById('btn-gerar').disabled = true;
+  document.getElementById('area-progresso').style.display = 'block';
+  document.getElementById('area-erro').style.display = 'none';
+
+  let pct = 0;
+  const barra = document.getElementById('barra-progresso');
+  const msg   = document.getElementById('msg-progresso');
+  const msgs  = ['Carregando registros...','Gerando planilha Excel...','Compactando em ZIP...','Finalizando...'];
+  let step = 0;
+  const timer = setInterval(() => {
+    if (pct < 80) { pct = Math.min(pct + 2, 80); }
+    else { pct = Math.min(pct + 0.1, 99); }
+    barra.style.width = pct + '%';
+    if (step < msgs.length - 1 && pct > (step + 1) * 20) {
+      step++; msg.textContent = msgs[step];
+    }
+  }, 300);
+
+  fetch('/gtv/exportar/lai', { method: 'POST' })
+    .then(response => {
+      clearInterval(timer);
+      if (!response.ok) return response.text().then(t => { throw new Error(t); });
+      return response.blob().then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        const cd  = response.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/);
+        a.download = match ? match[1] : 'LAI_GTV.zip';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        barra.style.width = '100%';
+        msg.textContent = '✅ Concluído!';
+        setTimeout(() => {
+          document.getElementById('area-progresso').style.display = 'none';
+          document.getElementById('btn-gerar').disabled = false;
+        }, 1000);
+      });
+    })
+    .catch(e => {
+      clearInterval(timer);
+      document.getElementById('area-progresso').style.display = 'none';
+      document.getElementById('area-erro').style.display = 'block';
+      document.getElementById('msg-erro').textContent = '❌ Erro: ' + e.message;
+      document.getElementById('btn-gerar').disabled = false;
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Consulta GTV{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>🟢 Consulta — Guias de Trânsito Vegetal (GTV)</h2>
+  <div class="alerta alerta-aviso" style="margin-bottom:14px">
+    Base de dados: {{ stats.total|default(0)|int }} registros disponíveis
+    {% if stats.data_ini %}({{ stats.data_ini }} a {{ stats.data_fim }}){% endif %}
+    — {{ stats.arquivos|default(0) }} arquivo(s) importado(s)
+  </div>
+
+  <div class="form-row col3">
+    <div>
+      <label>Procedência / Destinatário</label>
+      <input type="text" id="nome" placeholder="Digite o nome...">
+    </div>
+    <div>
+      <label>Emissor</label>
+      <input type="text" id="emissor" placeholder="Nome do emissor...">
+    </div>
+    <div>
+      <label>Cultura</label>
+      <input type="text" id="cultura" placeholder="Ex: DENDE, SOJA...">
+    </div>
+  </div>
+
+  <div class="form-row col2">
+    <div>
+      <label>Mês Inicial</label>
+      <input type="month" id="mes_ini">
+    </div>
+    <div>
+      <label>Mês Final</label>
+      <input type="month" id="mes_fim">
+    </div>
+  </div>
+
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:4px">
+    <button class="btn btn-azul" onclick="buscar()">🔍 Buscar</button>
+    <button class="btn btn-cinza" onclick="limpar()">✖ Limpar</button>
+  </div>
+</div>
+
+<div id="area-resultado" style="display:none">
+  <div class="metrics" id="metricas"></div>
+
+  <div class="card" id="card-exportar">
+    <h2>Exportar Resultado</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      <button class="btn btn-verde" onclick="exportar('excel')">📥 Excel (.xlsx)</button>
+      {% if usuario.nivel == 'founder' %}
+      <button class="btn btn-cinza" onclick="exportar('csv')">📄 CSV</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="area-tabelas"></div>
+</div>
+
+<div id="area-vazio" style="display:none">
+  <div class="alerta alerta-aviso">Nenhum resultado encontrado para os critérios informados.</div>
+</div>
+
+<div id="area-carregando" style="display:none">
+  <div class="alerta alerta-info"><span class="spinner"></span> Buscando...</div>
+</div>
+
+<script>
+let ultimoResultado = null;
+
+function buscar() {
+  const nome    = document.getElementById('nome').value.trim();
+  const emissor = document.getElementById('emissor').value.trim();
+  const cultura = document.getElementById('cultura').value.trim();
+  const mes_ini = document.getElementById('mes_ini').value;
+  const mes_fim = document.getElementById('mes_fim').value;
+
+  if (!nome && !emissor && !cultura) {
+    alert('Informe procedência/destinatário, emissor ou cultura.');
+    return;
+  }
+
+  document.getElementById('area-resultado').style.display  = 'none';
+  document.getElementById('area-vazio').style.display      = 'none';
+  document.getElementById('area-carregando').style.display = 'block';
+
+  const fd = new FormData();
+  fd.append('nome', nome);
+  fd.append('emissor', emissor);
+  fd.append('cultura', cultura);
+  fd.append('mes_ini', mes_ini);
+  fd.append('mes_fim', mes_fim);
+
+  fetch('/gtv/buscar', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('area-carregando').style.display = 'none';
+      if (data.erro) { alert('Erro: ' + data.erro); return; }
+      if (data.vazio) { document.getElementById('area-vazio').style.display = 'block'; return; }
+      ultimoResultado = { nome, emissor, cultura, mes_ini, mes_fim };
+      renderizarResultado(data);
+      document.getElementById('area-resultado').style.display = 'block';
+    })
+    .catch(e => {
+      document.getElementById('area-carregando').style.display = 'none';
+      alert('Erro na busca: ' + e);
+    });
+}
+
+function renderizarResultado(data) {
+  const met = document.getElementById('metricas');
+  met.innerHTML = `
+    <div class="metric"><div class="val">${data.total.toLocaleString('pt-BR')}</div><div class="lbl">Total de GTVs</div></div>
+    <div class="metric"><div class="val">${(data.resumo['gtv']?.origem||0).toLocaleString('pt-BR')}</div><div class="lbl">Como Origem</div></div>
+    <div class="metric"><div class="val">${(data.resumo['gtv']?.destino||0).toLocaleString('pt-BR')}</div><div class="lbl">Como Destino</div></div>
+  `;
+
+  const area = document.getElementById('area-tabelas');
+  area.innerHTML = '';
+
+  const preview = data.preview['gtv'] || {};
+  const cols_exib = ['gtv_numero','data_emissao','situacao_pedido','cultura',
+                     'quantidade_carga','medida','procedencia','municipio_origem',
+                     'destinatario_nome','municipio_destino'];
+
+  for (const [tipo, label] of [['origem','Como Origem'],['destino','Como Destino']]) {
+    const registros = preview[tipo] || [];
+    if (!registros.length) continue;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<h2>${label} — ${(data.resumo['gtv']?.[tipo]||0).toLocaleString('pt-BR')} registros (preview: ${registros.length})</h2>`;
+
+    const wrap  = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tr_h  = document.createElement('tr');
+
+    cols_exib.forEach(c => {
+      const th = document.createElement('th');
+      th.textContent = c.replace(/_/g,' ').toUpperCase();
+      tr_h.appendChild(th);
+    });
+    thead.appendChild(tr_h);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    registros.forEach(reg => {
+      const tr = document.createElement('tr');
+      cols_exib.forEach(c => {
+        const td = document.createElement('td');
+        td.textContent = reg[c] || '';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    card.appendChild(wrap);
+    area.appendChild(card);
+  }
+}
+
+function exportar(tipo) {
+  if (!ultimoResultado) return;
+  const url  = tipo === 'excel' ? '/gtv/exportar/excel' : '/gtv/exportar/csv';
+  const form = document.createElement('form');
+  form.method = 'POST'; form.action = url;
+  Object.entries(ultimoResultado).forEach(([k,v]) => {
+    const inp = document.createElement('input');
+    inp.type='hidden'; inp.name=k; inp.value=v;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
+}
+
+function limpar() {
+  ['nome','emissor','cultura','mes_ini','mes_fim'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('area-resultado').style.display = 'none';
+  document.getElementById('area-vazio').style.display     = 'none';
+  ultimoResultado = null;
+}
+
+['nome','emissor','cultura'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') buscar();
+  });
+});
+</script>
+{% endblock %}

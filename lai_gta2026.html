@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}LAI — GTAs 2026{% endblock %}
+
+{% block conteudo %}
+<div class="card">
+  <h2>📜 Exportação LAI — GTAs 2026</h2>
+
+  <div class="alerta alerta-info" style="margin-bottom:14px">
+    Base legal: <strong>Lei 12.527/2011 (LAI)</strong> + <strong>Lei 13.709/2018 (LGPD)</strong><br>
+    CPF (pessoa física) → <strong>anonimizado</strong> &nbsp;|&nbsp; CNPJ (pessoa jurídica) → <strong>mantido</strong> (dado público)
+  </div>
+
+  <div class="alerta alerta-aviso" style="margin-bottom:14px">
+    Total disponível: <strong>{{ stats.total|default(0)|int }} registros</strong>
+    ({{ stats.data_ini|default('') }} a {{ stats.data_fim|default('') }})
+    — {{ stats.arquivos|default(0) }} arquivo(s) importado(s)
+  </div>
+
+  <p style="margin-bottom:16px; color:#555; font-size:13px">
+    Clique em <strong>Gerar LAI</strong> para exportar todos os registros disponíveis em formato Excel anonimizado,
+    compactado em ZIP.
+  </p>
+
+  <button class="btn btn-azul" id="btn-gerar" onclick="gerarLai()">📥 Gerar LAI 2026</button>
+</div>
+
+<div id="area-progresso" style="display:none">
+  <div class="card">
+    <h2>Gerando arquivo...</h2>
+    <div class="alerta alerta-info">
+      <span class="spinner"></span>
+      <span id="msg-progresso">Preparando dados...</span>
+    </div>
+    <div class="progress-wrap" style="margin-top:10px">
+      <div class="progress-bar" id="barra-progresso" style="width:0%"></div>
+    </div>
+  </div>
+</div>
+
+<div id="area-erro" style="display:none">
+  <div class="alerta alerta-erro" id="msg-erro"></div>
+</div>
+
+<form id="form-lai" method="POST" action="/gta2026/exportar/lai" style="display:none"></form>
+
+<script>
+function gerarLai() {
+  document.getElementById('btn-gerar').disabled = true;
+  document.getElementById('area-progresso').style.display = 'block';
+  document.getElementById('area-erro').style.display = 'none';
+
+  // Animação de progresso
+  let pct = 0;
+  const barra = document.getElementById('barra-progresso');
+  const msg   = document.getElementById('msg-progresso');
+  const msgs  = [
+    'Carregando registros...',
+    'Aplicando anonimização LGPD...',
+    'Gerando planilha Excel...',
+    'Compactando em ZIP...',
+    'Finalizando...'
+  ];
+  let step = 0;
+  const timer = setInterval(() => {
+    if (pct < 80) { pct = Math.min(pct + 2, 80); } else { pct = Math.min(pct + 0.1, 99); }
+    barra.style.width = pct + '%';
+    if (step < msgs.length - 1 && pct > (step + 1) * 16) {
+      step++;
+      msg.textContent = msgs[step];
+    }
+  }, 300);
+
+  // Faz a requisição via fetch para detectar erros
+  fetch('/gta2026/exportar/lai', { method: 'POST' })
+    .then(response => {
+      clearInterval(timer);
+      if (!response.ok) {
+        return response.text().then(t => { throw new Error(t); });
+      }
+      // Força o download a partir do blob
+      return response.blob().then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        const cd  = response.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/);
+        a.download = match ? match[1] : 'LAI_GTA_2026.zip';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        barra.style.width = '100%';
+        msg.textContent = '✅ Concluído!';
+        setTimeout(() => {
+          document.getElementById('area-progresso').style.display = 'none';
+          document.getElementById('btn-gerar').disabled = false;
+        }, 1000);
+      });
+    })
+    .catch(e => {
+      clearInterval(timer);
+      document.getElementById('area-progresso').style.display = 'none';
+      document.getElementById('area-erro').style.display = 'block';
+      document.getElementById('msg-erro').textContent = '❌ Erro ao gerar LAI: ' + e.message;
+      document.getElementById('btn-gerar').disabled = false;
+    });
+}
+</script>
+{% endblock %}
