@@ -350,7 +350,7 @@ def _nome_confere_2026(nome_pesquisado, campo):
     return matches >= min(2, len(tokens))
 
 
-def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None):
+def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None, finalidade=None):
     """
     Busca no banco gta2026.db.
     mes_ini / mes_fim: strings no formato 'YYYY-MM' para filtrar período.
@@ -390,7 +390,9 @@ def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None):
     if mes_fim:
         sql_where.append("g.data_emissao <= ?")
         params.append(mes_fim + '-31')
-
+    if finalidade:
+        sql_where.append("g.finalidade = ?")
+        params.append(finalidade)
     if not sql_where:
         conn.close()
         return {}
@@ -437,8 +439,23 @@ def stats_2026():
     arquivos = conn.execute("SELECT COUNT(*) FROM arquivos_importados_2026").fetchone()[0]
     conn.close()
     return {
-        'total': total,
-        'data_ini': datas[0],
-        'data_fim': datas[1],
-        'arquivos': arquivos,
-    }
+            'total': total,
+            'data_ini': datas[0],
+            'data_fim': datas[1],
+            'arquivos': arquivos,
+        }
+
+
+_cache_finalidades_2026 = None
+
+def listar_finalidades_2026():
+    global _cache_finalidades_2026
+    if _cache_finalidades_2026 is not None:
+        return _cache_finalidades_2026
+    conn = get_conn_2026()
+    rows = conn.execute(
+        "SELECT DISTINCT finalidade FROM gta2026 WHERE finalidade IS NOT NULL ORDER BY finalidade"
+    ).fetchall()
+    conn.close()
+    _cache_finalidades_2026 = [r[0] for r in rows if r[0]]
+    return _cache_finalidades_2026

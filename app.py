@@ -11,13 +11,14 @@ from database import (
     init_db, get_conn, buscar_gtas, buscar_gtas_lai, importar_dataframe,
     arquivo_ja_importado, registrar_arquivo, registrar_auditoria, norm_cpf,
     verificar_aceite_termos, registrar_aceite_termos,
-    resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade
+    resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade,
+    listar_finalidades
 )
 from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado, gerar_excel_lai
 from database_gta2026 import (
     init_db_2026, buscar_gtas_2026, buscar_gtas_2026_lai,
     stats_2026, arquivo_ja_importado_2026, importar_dataframe_2026,
-    listar_arquivos_2026
+    listar_arquivos_2026, listar_finalidades_2026
 )
 from relatorio_gta2026 import (
     gerar_excel_2026, gerar_csv_2026, gerar_excel_lai_2026
@@ -248,14 +249,15 @@ def buscar():
     emissor = request.form.get('emissor', '').strip()
     ano_ini = request.form.get('ano_ini', '').strip()
     ano_fim = request.form.get('ano_fim', '').strip()
-
+    finalidade = request.form.get('finalidade', '').strip()
     if not nome and not cpf and not emissor:
         return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
 
     try:
         resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                                 ano_ini=ano_ini or None,
-                                ano_fim=ano_fim or None)
+                                ano_fim=ano_fim or None,
+                                finalidade=finalidade or None)
 
         total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
 
@@ -693,7 +695,7 @@ def gta2026_buscar():
     emissor = request.form.get('emissor', '').strip()
     mes_ini = request.form.get('mes_ini', '').strip()
     mes_fim = request.form.get('mes_fim', '').strip()
-
+    finalidade = request.form.get('finalidade', '').strip()
     if not nome and not cpf and not emissor:
         return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
 
@@ -701,7 +703,8 @@ def gta2026_buscar():
         resultado = buscar_gtas_2026(
             nome=nome, cpf=cpf, emissor=emissor,
             mes_ini=mes_ini or None,
-            mes_fim=mes_fim or None
+            mes_fim=mes_fim or None,
+            finalidade=finalidade or None
         )
 
         total = sum(
@@ -970,6 +973,14 @@ def gtv_exportar_lai():
         import traceback
         traceback.print_exc()
         return f'Erro ao gerar LAI GTV: {str(e)}', 500
+@app.route('/finalidades')
+@login_required
+def finalidades():
+    return jsonify(listar_finalidades())
 
+@app.route('/gta2026/finalidades')
+@login_required
+def finalidades_2026():
+    return jsonify(listar_finalidades_2026())
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

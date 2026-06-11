@@ -24,7 +24,13 @@
     </div>
   </div>
 
-  <div class="form-row col2">
+  <div class="form-row col3">
+    <div>
+      <label>Finalidade do transporte</label>
+      <select id="finalidade">
+        <option value="">— Todas as finalidades —</option>
+      </select>
+    </div>
     <div>
       <label>Mês Inicial</label>
       <input type="month" id="mes_ini" min="2026-01" max="2026-12" value="2026-01">
@@ -68,15 +74,29 @@
 <script>
 let ultimoResultado = null;
 
-function buscar() {
-  const nome    = document.getElementById('nome').value.trim();
-  const cpf     = document.getElementById('cpf').value.trim();
-  const emissor = document.getElementById('emissor').value.trim();
-  const mes_ini = document.getElementById('mes_ini').value;
-  const mes_fim = document.getElementById('mes_fim').value;
+// Carrega finalidades dinamicamente
+fetch('/gta2026/finalidades')
+  .then(r => r.json())
+  .then(lista => {
+    const sel = document.getElementById('finalidade');
+    lista.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      sel.appendChild(opt);
+    });
+  });
 
-  if (!nome && !cpf && !emissor) {
-    alert('Informe nome, CPF/CNPJ ou usuário emissor.');
+function buscar() {
+  const nome       = document.getElementById('nome').value.trim();
+  const cpf        = document.getElementById('cpf').value.trim();
+  const emissor    = document.getElementById('emissor').value.trim();
+  const finalidade = document.getElementById('finalidade').value.trim();
+  const mes_ini    = document.getElementById('mes_ini').value;
+  const mes_fim    = document.getElementById('mes_fim').value;
+
+  if (!nome && !cpf && !emissor && !finalidade) {
+    alert('Informe nome, CPF/CNPJ, usuário emissor ou finalidade.');
     return;
   }
 
@@ -88,6 +108,7 @@ function buscar() {
   fd.append('nome', nome);
   fd.append('cpf', cpf);
   fd.append('emissor', emissor);
+  fd.append('finalidade', finalidade);
   fd.append('mes_ini', mes_ini);
   fd.append('mes_fim', mes_fim);
 
@@ -95,17 +116,9 @@ function buscar() {
     .then(r => r.json())
     .then(data => {
       document.getElementById('area-carregando').style.display = 'none';
-
-      if (data.erro) {
-        alert('Erro: ' + data.erro);
-        return;
-      }
-      if (data.vazio) {
-        document.getElementById('area-vazio').style.display = 'block';
-        return;
-      }
-
-      ultimoResultado = { nome, cpf, emissor, mes_ini, mes_fim };
+      if (data.erro) { alert('Erro: ' + data.erro); return; }
+      if (data.vazio) { document.getElementById('area-vazio').style.display = 'block'; return; }
+      ultimoResultado = { nome, cpf, emissor, finalidade, mes_ini, mes_fim };
       renderizarResultado(data);
       document.getElementById('area-resultado').style.display = 'block';
     })
@@ -116,7 +129,6 @@ function buscar() {
 }
 
 function renderizarResultado(data) {
-  // Métricas
   const met = document.getElementById('metricas');
   met.innerHTML = `
     <div class="metric"><div class="val">${data.total.toLocaleString('pt-BR')}</div><div class="lbl">Total de GTAs</div></div>
@@ -124,43 +136,31 @@ function renderizarResultado(data) {
     <div class="metric"><div class="val">${(data.resumo['2026']?.destino||0).toLocaleString('pt-BR')}</div><div class="lbl">Como Destino</div></div>
   `;
 
-  // Tabelas
   const area = document.getElementById('area-tabelas');
   area.innerHTML = '';
-
   const preview = data.preview['2026'] || {};
-  const colunas = preview.colunas || [];
+  const cols_exib = ['gta_numero','data_emissao','finalidade','situacao_gta',
+                     'origem_nome','origem_cidade_nome','destinatario_nome',
+                     'destinatario_cidade_nome','total_animais','taxonomia'];
 
-  for (const [tipo, label] of [['origem', 'Como Origem'], ['destino', 'Como Destino']]) {
+  for (const [tipo, label] of [['origem','Como Origem'],['destino','Como Destino']]) {
     const registros = preview[tipo] || [];
     if (!registros.length) continue;
-
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `<h2>${label} — ${(data.resumo['2026']?.[tipo]||0).toLocaleString('pt-BR')} registros (preview: ${registros.length})</h2>`;
-
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
-
     const table = document.createElement('table');
     const thead = document.createElement('thead');
     const tr_h  = document.createElement('tr');
-
-    // Colunas principais para exibição
-    const cols_exib = [
-      'gta_numero', 'data_emissao', 'finalidade', 'situacao_gta',
-      'origem_nome', 'origem_cidade_nome', 'destinatario_nome',
-      'destinatario_cidade_nome', 'total_animais', 'taxonomia'
-    ];
-
     cols_exib.forEach(c => {
       const th = document.createElement('th');
-      th.textContent = c.replace(/_/g, ' ').toUpperCase();
+      th.textContent = c.replace(/_/g,' ').toUpperCase();
       tr_h.appendChild(th);
     });
     thead.appendChild(tr_h);
     table.appendChild(thead);
-
     const tbody = document.createElement('tbody');
     registros.forEach(reg => {
       const tr = document.createElement('tr');
@@ -180,16 +180,12 @@ function renderizarResultado(data) {
 
 function exportar(tipo) {
   if (!ultimoResultado) return;
-  const fd = new FormData();
-  Object.entries(ultimoResultado).forEach(([k,v]) => fd.append(k, v));
-
-  const url = tipo === 'excel' ? '/gta2026/exportar/excel' : '/gta2026/exportar/csv';
+  const url  = tipo === 'excel' ? '/gta2026/exportar/excel' : '/gta2026/exportar/csv';
   const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = url;
+  form.method = 'POST'; form.action = url;
   Object.entries(ultimoResultado).forEach(([k,v]) => {
     const inp = document.createElement('input');
-    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    inp.type='hidden'; inp.name=k; inp.value=v;
     form.appendChild(inp);
   });
   document.body.appendChild(form);
@@ -199,6 +195,7 @@ function exportar(tipo) {
 
 function limpar() {
   ['nome','cpf','emissor'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('finalidade').value = '';
   document.getElementById('mes_ini').value = '2026-01';
   document.getElementById('mes_fim').value = '2026-04';
   document.getElementById('area-resultado').style.display = 'none';
@@ -206,7 +203,6 @@ function limpar() {
   ultimoResultado = null;
 }
 
-// Enter para buscar
 ['nome','cpf','emissor'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => {
     if (e.key === 'Enter') buscar();

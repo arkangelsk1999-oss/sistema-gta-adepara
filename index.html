@@ -24,7 +24,12 @@
       <input type="text" id="emissor" placeholder="ex: JOAO DA SILVA"
              oninput="this.value=this.value.toUpperCase()">
     </div>
-    <div></div>
+    <div>
+      <label>Finalidade do transporte</label>
+      <select id="finalidade">
+        <option value="">— Todas as finalidades —</option>
+      </select>
+    </div>
   </div>
   <div class="form-row col4">
     <div>
@@ -88,6 +93,19 @@
 <script>
 let dadosBusca = {};
 
+// Carrega finalidades dinamicamente
+fetch('/finalidades')
+  .then(r => r.json())
+  .then(lista => {
+    const sel = document.getElementById('finalidade');
+    lista.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      sel.appendChild(opt);
+    });
+  });
+
 function setStatus(msg, tipo='') {
   const el = document.getElementById('status-busca');
   el.innerHTML = msg;
@@ -107,11 +125,12 @@ function esconderBarra() {
 }
 
 async function buscar() {
-  const nome    = document.getElementById('nome').value.trim();
-  const cpf     = document.getElementById('cpf').value.trim();
-  const emissor = document.getElementById('emissor').value.trim();
-  const anoIni  = document.getElementById('ano_ini').value.trim();
-  const anoFim  = document.getElementById('ano_fim').value.trim();
+  const nome       = document.getElementById('nome').value.trim();
+  const cpf        = document.getElementById('cpf').value.trim();
+  const emissor    = document.getElementById('emissor').value.trim();
+  const finalidade = document.getElementById('finalidade').value.trim();
+  const anoIni     = document.getElementById('ano_ini').value.trim();
+  const anoFim     = document.getElementById('ano_fim').value.trim();
 
   if (!nome && !cpf && !emissor) {
     setStatus('⚠️ Informe nome, CPF/CNPJ ou usuário emissor.', 'erro');
@@ -131,13 +150,13 @@ async function buscar() {
   fd.append('nome', nome);
   fd.append('cpf', cpf);
   fd.append('emissor', emissor);
+  fd.append('finalidade', finalidade);
   fd.append('ano_ini', anoIni);
   fd.append('ano_fim', anoFim);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-  // Animação de progresso durante a busca
   let pct = 10;
   const intervalo = setInterval(() => {
     if (pct < 85) {
@@ -149,11 +168,7 @@ async function buscar() {
   let resp, data;
 
   try {
-    resp = await fetch('/buscar', {
-      method: 'POST',
-      body: fd,
-      signal: controller.signal
-    });
+    resp = await fetch('/buscar', { method: 'POST', body: fd, signal: controller.signal });
     clearTimeout(timeoutId);
     clearInterval(intervalo);
   } catch(e) {
@@ -179,22 +194,13 @@ async function buscar() {
   }
 
   try {
-    if (data.erro) {
-      esconderBarra();
-      setStatus('❌ ' + data.erro, 'erro');
-      return;
-    }
-    if (data.vazio) {
-      esconderBarra();
-      setStatus('');
-      document.getElementById('area-vazio').style.display = 'block';
-      return;
-    }
+    if (data.erro) { esconderBarra(); setStatus('❌ ' + data.erro, 'erro'); return; }
+    if (data.vazio) { esconderBarra(); setStatus(''); document.getElementById('area-vazio').style.display = 'block'; return; }
 
     mostrarBarra('Concluído!', 100, `${data.total.toLocaleString('pt-BR')} GTAs encontradas`);
     setTimeout(esconderBarra, 2000);
 
-    dadosBusca = { nome, cpf, emissor, ano_ini: anoIni, ano_fim: anoFim };
+    dadosBusca = { nome, cpf, emissor, finalidade, ano_ini: anoIni, ano_fim: anoFim };
     renderResultado(data);
     setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
     document.getElementById('btn-exportar').style.display = 'block';
@@ -231,7 +237,6 @@ function renderResultado(data) {
     const orig = preview.origem;
     const dest = preview.destino;
     const cols = preview.colunas;
-
     const qo = data.resumo[ano]?.origem || 0;
     const qd = data.resumo[ano]?.destino || 0;
 
@@ -253,7 +258,6 @@ function renderResultado(data) {
 function montarTabela(cols, orig, dest) {
   const th = cols.map(c => `<th>${c}</th>`).join('');
   let linhas = '';
-
   for (const row of orig) {
     linhas += '<tr>' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
   }
@@ -261,32 +265,20 @@ function montarTabela(cols, orig, dest) {
   for (const row of dest) {
     linhas += '<tr style="background:#fff0f0">' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
   }
-
   return `<table><thead><tr>${th}</tr></thead><tbody>${linhas}</tbody></table>`;
 }
 
 async function exportar() {
   const fd = new FormData();
-  fd.append('nome',    dadosBusca.nome);
-  fd.append('cpf',     dadosBusca.cpf);
-  fd.append('emissor', dadosBusca.emissor);
-  fd.append('ano_ini', dadosBusca.ano_ini);
-  fd.append('ano_fim', dadosBusca.ano_fim);
-
+  Object.entries(dadosBusca).forEach(([k,v]) => fd.append(k, v));
   const btn = document.getElementById('btn-exportar');
   btn.disabled = true;
   setStatus('<span class="spinner"></span> Gerando Excel...');
   mostrarBarra('Gerando arquivo Excel...', 20, 'Processando dados...');
-
-  // Animação durante exportação
   let pct = 20;
   const intervalo = setInterval(() => {
-    if (pct < 85) {
-      pct += Math.random() * 8;
-      mostrarBarra('Gerando arquivo Excel...', Math.min(pct, 85), 'Processando dados...');
-    }
+    if (pct < 85) { pct += Math.random() * 8; mostrarBarra('Gerando arquivo Excel...', Math.min(pct, 85), 'Processando dados...'); }
   }, 3000);
-
   try {
     const resp = await fetch('/exportar/excel', { method: 'POST', body: fd });
     clearInterval(intervalo);
@@ -294,9 +286,9 @@ async function exportar() {
     const blob = await resp.blob();
     mostrarBarra('Concluído!', 100, 'Download iniciado!');
     setTimeout(esconderBarra, 2000);
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href  = url;
+    link.href = url;
     link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.xlsx`;
     link.click();
     setStatus('✅ Excel gerado com sucesso.');
@@ -305,31 +297,20 @@ async function exportar() {
     esconderBarra();
     setStatus('❌ Erro ao gerar Excel.', 'erro');
   }
-
   btn.disabled = false;
 }
 
 async function exportarCSV() {
   const fd = new FormData();
-  fd.append('nome',    dadosBusca.nome);
-  fd.append('cpf',     dadosBusca.cpf);
-  fd.append('emissor', dadosBusca.emissor);
-  fd.append('ano_ini', dadosBusca.ano_ini);
-  fd.append('ano_fim', dadosBusca.ano_fim);
-
+  Object.entries(dadosBusca).forEach(([k,v]) => fd.append(k, v));
   const btn = document.getElementById('btn-exportar-csv');
   btn.disabled = true;
   setStatus('<span class="spinner"></span> Gerando CSV...');
   mostrarBarra('Gerando arquivo CSV...', 20, 'Processando dados...');
-
   let pct = 20;
   const intervalo = setInterval(() => {
-    if (pct < 85) {
-      pct += Math.random() * 8;
-      mostrarBarra('Gerando arquivo CSV...', Math.min(pct, 85), 'Processando dados...');
-    }
+    if (pct < 85) { pct += Math.random() * 8; mostrarBarra('Gerando arquivo CSV...', Math.min(pct, 85), 'Processando dados...'); }
   }, 3000);
-
   try {
     const resp = await fetch('/exportar/csv', { method: 'POST', body: fd });
     clearInterval(intervalo);
@@ -337,9 +318,9 @@ async function exportarCSV() {
     const blob = await resp.blob();
     mostrarBarra('Concluído!', 100, 'Download iniciado!');
     setTimeout(esconderBarra, 2000);
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href  = url;
+    link.href = url;
     link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.csv`;
     link.click();
     setStatus('✅ CSV gerado com sucesso.');
@@ -348,7 +329,6 @@ async function exportarCSV() {
     esconderBarra();
     setStatus('❌ Erro ao gerar CSV.', 'erro');
   }
-
   btn.disabled = false;
 }
 

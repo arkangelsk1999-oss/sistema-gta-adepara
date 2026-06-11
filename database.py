@@ -357,7 +357,7 @@ def _nome_confere(nome_pesquisado, campo):
     return matches >= min(2, len(tokens))
 
 
-def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
+def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalidade=None):
     conn = get_conn()
     nome    = nome.strip().upper()
     cpf     = norm_cpf(cpf)
@@ -391,7 +391,9 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None):
         if ano_fim:
             sql_where.append("g.ano <= ?")
             params.append(int(ano_fim))
-
+        if finalidade:
+            sql_where.append("g.dados_json LIKE ?")
+            params.append(f'%{finalidade}%')
         sql = f"SELECT g.* FROM gtas g WHERE {' AND '.join(sql_where)} ORDER BY g.ano"
         rows = conn.execute(sql, params).fetchall()
     else:
@@ -472,3 +474,20 @@ def registrar_auditoria(usuario, ip, localidade, cpf_pesquisado, nome_pesquisado
     ))
     conn.commit()
     conn.close()
+
+
+_cache_finalidades = None
+
+def listar_finalidades():
+    global _cache_finalidades
+    if _cache_finalidades is not None:
+        return _cache_finalidades
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT DISTINCT json_extract(dados_json, '$.\"Finalidade do transporte\"') AS fin 
+           FROM (SELECT dados_json FROM gtas LIMIT 100000) 
+           WHERE fin IS NOT NULL ORDER BY fin"""
+    ).fetchall()
+    conn.close()
+    _cache_finalidades = sorted(set(r[0] for r in rows if r[0]))
+    return _cache_finalidades
