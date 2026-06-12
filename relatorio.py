@@ -314,12 +314,11 @@ def _anonimizar_nome_se_cpf(nome, cpf_cnpj):
     return nome or ''
 
 
-# ── Excel resultado busca ─────────────────────────────────────
-def gerar_excel_resultado(resultado, nome_busca, cpf_busca, usuario=None):
-    wb = Workbook()
-    wb.remove(wb.active)
-    anos = sorted(resultado.keys())
+# Usa xlsxwriter para aguentar volumes grandes (>50k registros)
+# ══════════════════════════════════════════════════════════════
 
+def gerar_excel_resultado(resultado, nome_busca, cpf_busca, usuario=None):
+    anos = sorted(resultado.keys())
     ano_min, ano_max = _periodo_banco()
     periodo_banco = f"{ano_min} a {ano_max}" if ano_min else "N/D"
 
@@ -327,131 +326,118 @@ def gerar_excel_resultado(resultado, nome_busca, cpf_busca, usuario=None):
     usuario_cpf  = usuario.get('cpf', '')  if usuario else ''
     agora        = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
 
-    wb.properties.creator        = usuario_nome
-    wb.properties.lastModifiedBy = usuario_nome
-    wb.properties.description    = f"Gerado por: {usuario_nome} | CPF: {usuario_cpf} | Data: {agora}"
-    wb.properties.subject        = "Sistema de Consulta a Histórico de Emissões de GTAs — ADEPARÁ"
-    wb.properties.keywords       = f"{usuario_nome} {usuario_cpf} {agora}"
+    buf = io.BytesIO()
+    wb  = xlsxwriter.Workbook(buf, {'in_memory': True, 'constant_memory': False})
 
-    ws = wb.create_sheet("RESUMO", 0)
-    ws.merge_cells("A1:D1")
-    ws["A1"] = "AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ"
-    ws["A1"].font      = Font(bold=True, size=13, color=AZUL)
-    ws["A1"].alignment = _align()
+    # Formatos
+    fmt_titulo  = wb.add_format({'bold': True, 'font_size': 13, 'font_color': '#1A5276', 'align': 'center'})
+    fmt_label   = wb.add_format({'bold': True})
+    fmt_azul    = wb.add_format({'bold': True, 'font_color': '#1A5276'})
+    fmt_cab_orig= wb.add_format({'bold': True, 'font_color': 'white', 'bg_color': '#1A5276',
+                                  'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'border': 1})
+    fmt_cab_dest= wb.add_format({'bold': True, 'font_color': 'white', 'bg_color': '#8E1A0E',
+                                  'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'border': 1})
+    fmt_sep     = wb.add_format({'bold': True, 'font_color': 'white', 'bg_color': '#FF0000',
+                                  'align': 'center', 'valign': 'vcenter'})
+    fmt_normal  = wb.add_format({'border': 1})
+    fmt_zebra   = wb.add_format({'border': 1, 'bg_color': '#F2F2F2'})
+    fmt_dest    = wb.add_format({'border': 1, 'bg_color': '#FFF0F0'})
+    fmt_dest_z  = wb.add_format({'border': 1, 'bg_color': '#FFE0E0'})
+    fmt_resumo_cab = wb.add_format({'bold': True, 'font_color': 'white', 'bg_color': '#1A5276',
+                                     'align': 'center', 'border': 1})
+    fmt_resumo_tot = wb.add_format({'bold': True})
 
-    ws["A3"] = "Produtor pesquisado:"
-    ws["B3"] = (nome_busca or '').upper()
-    ws["A4"] = "CPF/CNPJ:"
-    ws["B4"] = cpf_busca or ''
-    ws["A5"] = "Data do relatório:"
-    ws["B5"] = agora
-    ws["A6"] = "Gerado por:"
-    ws["B6"] = f"{usuario_nome} — CPF: {usuario_cpf}"
-    ws["A7"] = "Base de dados:"
-    ws["B7"] = f"GTAs emitidas no Pará — {periodo_banco}"
-    ws["A7"].font = Font(bold=True, color=AZUL)
-    ws["B7"].font = Font(bold=True, color=AZUL)
+    # ── ABA RESUMO ────────────────────────────────────────────
+    ws = wb.add_worksheet('RESUMO')
+    ws.set_column('A:A', 25)
+    ws.set_column('B:D', 25)
+    ws.merge_range('A1:D1', 'AGÊNCIA DE DEFESA AGROPECUÁRIA DO ESTADO DO PARÁ', fmt_titulo)
 
-    for col, titulo in enumerate(["ANO","GTAs como REMETENTE","GTAs como DESTINATÁRIO","TOTAL"], 1):
-        c = ws.cell(row=9, column=col, value=titulo)
-        c.fill = _fill(AZUL); c.font = _font(bold=True); c.alignment = _align()
+    infos = [
+        ('Produtor pesquisado:', (nome_busca or '').upper()),
+        ('CPF/CNPJ:',           cpf_busca or ''),
+        ('Data do relatório:',  agora),
+        ('Gerado por:',         f'{usuario_nome} — CPF: {usuario_cpf}'),
+        ('Base de dados:',      f'GTAs emitidas no Pará — {periodo_banco}'),
+    ]
+    for i, (label, valor) in enumerate(infos, 2):
+        ws.write(i, 0, label, fmt_label)
+        ws.write(i, 1, valor, fmt_azul if 'Base' in label else None)
+
+    linha_tab = len(infos) + 3
+    for ci, titulo in enumerate(['ANO', 'GTAs como REMETENTE', 'GTAs como DESTINATÁRIO', 'TOTAL']):
+        ws.write(linha_tab, ci, titulo, fmt_resumo_cab)
 
     tot_o = tot_d = 0
     for i, ano in enumerate(anos):
         qo = len(resultado[ano]['origem'])
         qd = len(resultado[ano]['destino'])
-        ws.cell(row=10+i, column=1, value=str(ano))
-        ws.cell(row=10+i, column=2, value=qo)
-        ws.cell(row=10+i, column=3, value=qd)
-        ws.cell(row=10+i, column=4, value=qo+qd)
+        ws.write(linha_tab + 1 + i, 0, str(ano))
+        ws.write(linha_tab + 1 + i, 1, qo)
+        ws.write(linha_tab + 1 + i, 2, qd)
+        ws.write(linha_tab + 1 + i, 3, qo + qd)
         tot_o += qo; tot_d += qd
 
-    lr = 10 + len(anos)
-    for col, val in enumerate(["TOTAL", tot_o, tot_d, tot_o+tot_d], 1):
-        c = ws.cell(row=lr, column=col, value=val)
-        c.font = Font(bold=True)
+    lr = linha_tab + 1 + len(anos)
+    for ci, val in enumerate(['TOTAL', tot_o, tot_d, tot_o + tot_d]):
+        ws.write(lr, ci, val, fmt_resumo_tot)
 
-    ws.column_dimensions["A"].width = 10
-    ws.column_dimensions["B"].width = 25
-    ws.column_dimensions["C"].width = 25
-    ws.column_dimensions["D"].width = 12
-
-    COLS_INTERNAS = {'_ano','_arquivo','_formato'}
+    # ── ABAS POR ANO ──────────────────────────────────────────
+    COLS_INTERNAS = {'_ano', '_arquivo', '_formato'}
     for ano in anos:
         orig = resultado[ano]['origem']
         dest = resultado[ano]['destino']
-        cols = resultado[ano]['colunas']
-        cols = [c for c in cols if c not in COLS_INTERNAS]
+        cols = [c for c in resultado[ano]['colunas'] if c not in COLS_INTERNAS]
+
         if not orig and not dest:
             continue
 
-        ws_ano = wb.create_sheet(str(ano))
-        linha  = 1
+        ws_ano = wb.add_worksheet(str(ano))
+        linha  = 0
 
-        def escrever_bloco(dados, fill_header, fill_zebra):
-            nonlocal linha
-            if not dados:
-                return
-            for ci, col in enumerate(cols, 1):
-                c = ws_ano.cell(row=linha, column=ci, value=col)
-                c.fill = _fill(fill_header)
-                c.font = _font(bold=True)
-                c.alignment = _align()
-            ws_ano.row_dimensions[linha].height = 28
-            linha += 1
-            for ri, row_dict in enumerate(dados):
-                for ci, col in enumerate(cols, 1):
-                    val = row_dict.get(col, '')
-                    ws_ano.cell(row=linha, column=ci, value=val)
-                    if ri % 2 == 0:
-                        ws_ano.cell(row=linha, column=ci).fill = _fill(fill_zebra)
-                linha += 1
-
-        escrever_bloco(orig, AZUL, CINZA)
-
-        for ci in range(1, len(cols)+1):
-            c = ws_ano.cell(row=linha, column=ci)
-            c.fill = _fill(VERMELHO)
-            c.font = _font(bold=True)
-            c.alignment = _align()
-        ws_ano.cell(row=linha, column=1).value = "▼  DESTINATÁRIO  ▼"
-        ws_ano.row_dimensions[linha].height = 18
+        # Cabeçalho origem
+        for ci, col in enumerate(cols):
+            ws_ano.write(linha, ci, col, fmt_cab_orig)
+            ws_ano.set_column(ci, ci, min(max(len(str(col)) + 2, 10), 40))
+        ws_ano.set_row(linha, 28)
         linha += 1
 
-        escrever_bloco(dest, VERM_ESC, "FFF0F0")
+        # Dados origem
+        for ri, row_dict in enumerate(orig):
+            fmt = fmt_zebra if ri % 2 == 0 else fmt_normal
+            for ci, col in enumerate(cols):
+                val = row_dict.get(col, '')
+                ws_ano.write(linha, ci, str(val) if val is not None else '', fmt)
+            linha += 1
 
-        for ci, col in enumerate(cols, 1):
-            letra = get_column_letter(ci)
-            tam = min(max(len(str(col)), 10) + 2, 40)
-            ws_ano.column_dimensions[letra].width = tam
+        # Separador
+        ws_ano.merge_range(linha, 0, linha, len(cols) - 1, '▼  DESTINATÁRIO  ▼', fmt_sep)
+        ws_ano.set_row(linha, 18)
+        linha += 1
 
-        ultima_col = get_column_letter(len(cols))
-        ws_ano.auto_filter.ref = f"A1:{ultima_col}1"
-        ws_ano.freeze_panes = "A2"
+        # Dados destino
+        for ri, row_dict in enumerate(dest):
+            fmt = fmt_dest_z if ri % 2 == 0 else fmt_dest
+            for ci, col in enumerate(cols):
+                val = row_dict.get(col, '')
+                ws_ano.write(linha, ci, str(val) if val is not None else '', fmt)
+            linha += 1
 
-    ws_r = wb.create_sheet("_rastreio")
-    ws_r["A1"] = "Gerado por"
-    ws_r["B1"] = usuario_nome
-    ws_r["A2"] = "CPF"
-    ws_r["B2"] = usuario_cpf
-    ws_r["A3"] = "Data/Hora"
-    ws_r["B3"] = agora
-    ws_r["A4"] = "Sistema"
-    ws_r["B4"] = "Sistema de Consulta a Histórico de Emissões de GTAs — ADEPARÁ"
-    ws_r["A5"] = "Produtor pesquisado"
-    ws_r["B5"] = (nome_busca or '').upper()
-    ws_r["A6"] = "CPF/CNPJ pesquisado"
-    ws_r["B6"] = cpf_busca or ''
-    ws_r["A7"] = "Base de dados"
-    ws_r["B7"] = f"GTAs emitidas no Pará — {periodo_banco}"
+        ws_ano.autofilter(0, 0, 0, len(cols) - 1)
+        ws_ano.freeze_panes(1, 0)
 
-    senha_protecao = ''.join(filter(str.isdigit, usuario_cpf)) if usuario_cpf else 'adepara2025'
-    ws_r.protection.sheet    = True
-    ws_r.protection.password = senha_protecao
-    ws_r.sheet_state = 'hidden'
+    # ── ABA RASTREIO ──────────────────────────────────────────
+    ws_r = wb.add_worksheet('_rastreio')
+    ws_r.write('A1', 'Gerado por');      ws_r.write('B1', usuario_nome)
+    ws_r.write('A2', 'CPF');             ws_r.write('B2', usuario_cpf)
+    ws_r.write('A3', 'Data/Hora');       ws_r.write('B3', agora)
+    ws_r.write('A4', 'Sistema');         ws_r.write('B4', 'Sistema GTA — ADEPARÁ')
+    ws_r.write('A5', 'Pesquisado');      ws_r.write('B5', (nome_busca or '').upper())
+    ws_r.write('A6', 'CPF pesquisado');  ws_r.write('B6', cpf_busca or '')
+    ws_r.write('A7', 'Base de dados');   ws_r.write('B7', f'GTAs emitidas no Pará — {periodo_banco}')
+    ws_r.hide()
 
-    buf = io.BytesIO()
-    wb.save(buf)
+    wb.close()
     buf.seek(0)
     return buf
 
@@ -753,3 +739,57 @@ def gerar_pdf_auditoria(rows, gerado_por, data_ini='', data_fim=''):
     doc.build(elementos, onFirstPage=header, onLaterPages=header)
     buf.seek(0)
     return buf
+
+
+def gerar_csv_zipado(resultado, nome_busca, cpf_busca, finalidade_busca, usuario=None):
+    """
+    Gera CSV com todos os registros e compacta em ZIP.
+    Indicado para volumes grandes (>50 mil registros).
+    """
+    COLS_INTERNAS = {'_ano', '_arquivo', '_formato'}
+    anos = sorted(resultado.keys())
+
+    buf_csv = io.StringIO()
+    writer = None
+
+    for ano in anos:
+        orig = resultado[ano]['origem']
+        dest = resultado[ano]['destino']
+        cols = [c for c in resultado[ano]['colunas'] if c not in COLS_INTERNAS]
+
+        todos = []
+        for row in orig:
+            r = {c: row.get(c, '') for c in cols}
+            r['__ANO__']   = str(ano)
+            r['__PAPEL__'] = 'REMETENTE'
+            todos.append(r)
+        for row in dest:
+            r = {c: row.get(c, '') for c in cols}
+            r['__ANO__']   = str(ano)
+            r['__PAPEL__'] = 'DESTINATARIO'
+            todos.append(r)
+
+        if not todos:
+            continue
+
+        fieldnames = ['__ANO__', '__PAPEL__'] + cols
+        if writer is None:
+            writer = csv.DictWriter(buf_csv, fieldnames=fieldnames,
+                                    delimiter=';', extrasaction='ignore')
+            writer.writeheader()
+        writer.writerows(todos)
+
+    buf_csv.seek(0)
+    conteudo_csv = buf_csv.getvalue().encode('utf-8-sig')
+
+    # Compacta em ZIP
+    agora = datetime.now().strftime('%Y%m%d_%H%M%S')
+    termo = (nome_busca or cpf_busca or finalidade_busca or 'resultado').replace(' ', '_')[:30]
+    nome_csv = f"GTA_{termo}_{agora}.csv"
+
+    buf_zip = io.BytesIO()
+    with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(nome_csv, conteudo_csv)
+
+    buf_zip.seek(0)
+    return buf_zip, nome_csv.replace('.csv', '.zip')

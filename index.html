@@ -49,16 +49,18 @@
       </button>
     </div>
   </div>
-  {% if usuario.nivel == 'founder' %}
-  <div style="margin-top:8px;">
+  {% if usuario.nivel in ['founder', 'master'] %}
+  <div style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
     <button class="btn btn-cinza" id="btn-exportar-csv" style="padding:7px 18px;display:none" onclick="exportarCSV()">
-      📄 Exportar CSV (Founder)
+      📄 Exportar CSV
+    </button>
+    <button class="btn btn-cinza" id="btn-exportar-zip" style="padding:7px 18px;display:none" onclick="exportarZip()">
+      📦 Exportar CSV Zipado (volume grande)
     </button>
   </div>
   {% endif %}
   <div id="status-busca" style="font-size:13px;color:#666;min-height:20px;margin-top:4px;"></div>
 
-  <!-- Barra de progresso -->
   <div id="barra-container" style="display:none;margin-top:12px;">
     <div style="font-size:12px;color:#555;margin-bottom:4px;" id="barra-label">Processando...</div>
     <div style="background:#e0e0e0;border-radius:8px;height:14px;overflow:hidden;">
@@ -92,16 +94,15 @@
 
 <script>
 let dadosBusca = {};
+const LIMITE_VOLUME_GRANDE = 50000;
 
-// Carrega finalidades dinamicamente
 fetch('/finalidades')
   .then(r => r.json())
   .then(lista => {
     const sel = document.getElementById('finalidade');
     lista.forEach(f => {
       const opt = document.createElement('option');
-      opt.value = f;
-      opt.textContent = f;
+      opt.value = f; opt.textContent = f;
       sel.appendChild(opt);
     });
   });
@@ -124,6 +125,15 @@ function esconderBarra() {
   document.getElementById('barra-progresso').style.width = '0%';
 }
 
+function mostrarBotoesExportacao(total) {
+  const btnExcel = document.getElementById('btn-exportar');
+  const btnCsv   = document.getElementById('btn-exportar-csv');
+  const btnZip   = document.getElementById('btn-exportar-zip');
+  if (btnExcel) btnExcel.style.display = 'block';
+  if (btnCsv)   btnCsv.style.display   = 'inline-block';
+  if (btnZip)   btnZip.style.display   = 'inline-block';
+}
+
 async function buscar() {
   const nome       = document.getElementById('nome').value.trim();
   const cpf        = document.getElementById('cpf').value.trim();
@@ -132,66 +142,46 @@ async function buscar() {
   const anoIni     = document.getElementById('ano_ini').value.trim();
   const anoFim     = document.getElementById('ano_fim').value.trim();
 
-  if (!nome && !cpf && !emissor) {
-    setStatus('⚠️ Informe nome, CPF/CNPJ ou usuário emissor.', 'erro');
+  if (!nome && !cpf && !emissor && !finalidade) {
+    setStatus('⚠️ Informe nome, CPF/CNPJ, usuário emissor ou finalidade.', 'erro');
     return;
   }
 
   document.getElementById('area-resultado').style.display = 'none';
   document.getElementById('area-vazio').style.display = 'none';
-  document.getElementById('btn-exportar').style.display = 'none';
-  const btnCsv = document.getElementById('btn-exportar-csv');
-  if (btnCsv) btnCsv.style.display = 'none';
+  ['btn-exportar','btn-exportar-csv','btn-exportar-zip'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.style.display = 'none';
+  });
 
   setStatus('<span class="spinner"></span> Buscando... (pode demorar alguns minutos para bases grandes)');
   mostrarBarra('Buscando na base de dados...', 10);
 
   const fd = new FormData();
-  fd.append('nome', nome);
-  fd.append('cpf', cpf);
-  fd.append('emissor', emissor);
-  fd.append('finalidade', finalidade);
-  fd.append('ano_ini', anoIni);
-  fd.append('ano_fim', anoFim);
+  fd.append('nome', nome); fd.append('cpf', cpf);
+  fd.append('emissor', emissor); fd.append('finalidade', finalidade);
+  fd.append('ano_ini', anoIni); fd.append('ano_fim', anoFim);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000);
-
   let pct = 10;
   const intervalo = setInterval(() => {
-    if (pct < 85) {
-      pct += Math.random() * 5;
-      mostrarBarra('Buscando na base de dados...', Math.min(pct, 85));
-    }
+    if (pct < 85) { pct += Math.random() * 5; mostrarBarra('Buscando na base de dados...', Math.min(pct, 85)); }
   }, 2000);
 
   let resp, data;
-
   try {
     resp = await fetch('/buscar', { method: 'POST', body: fd, signal: controller.signal });
-    clearTimeout(timeoutId);
-    clearInterval(intervalo);
+    clearTimeout(timeoutId); clearInterval(intervalo);
   } catch(e) {
-    clearTimeout(timeoutId);
-    clearInterval(intervalo);
-    esconderBarra();
-    if (e.name === 'AbortError') {
-      setStatus('❌ Tempo limite excedido. Tente filtrar por ano.', 'erro');
-    } else {
-      setStatus('❌ Falha na conexão com o servidor: ' + e.message, 'erro');
-    }
+    clearTimeout(timeoutId); clearInterval(intervalo); esconderBarra();
+    setStatus(e.name === 'AbortError' ? '❌ Tempo limite excedido. Tente filtrar por ano.' : '❌ Falha na conexão: ' + e.message, 'erro');
     return;
   }
 
   mostrarBarra('Processando resultados...', 90);
-
-  try {
-    data = await resp.json();
-  } catch(e) {
-    esconderBarra();
-    setStatus('❌ Erro ao processar resposta do servidor: ' + e.message, 'erro');
-    return;
-  }
+  try { data = await resp.json(); }
+  catch(e) { esconderBarra(); setStatus('❌ Erro ao processar resposta: ' + e.message, 'erro'); return; }
 
   try {
     if (data.erro) { esconderBarra(); setStatus('❌ ' + data.erro, 'erro'); return; }
@@ -203,13 +193,9 @@ async function buscar() {
     dadosBusca = { nome, cpf, emissor, finalidade, ano_ini: anoIni, ano_fim: anoFim };
     renderResultado(data);
     setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
-    document.getElementById('btn-exportar').style.display = 'block';
-    if (btnCsv) btnCsv.style.display = 'inline-block';
+    mostrarBotoesExportacao(data.total);
 
-  } catch(e) {
-    esconderBarra();
-    setStatus('❌ Erro ao renderizar resultado: ' + e.message, 'erro');
-  }
+  } catch(e) { esconderBarra(); setStatus('❌ Erro ao renderizar: ' + e.message, 'erro'); }
 }
 
 function renderResultado(data) {
@@ -229,17 +215,11 @@ function renderResultado(data) {
 
   const container = document.getElementById('abas-container');
   container.innerHTML = '';
-
   for (const ano of data.anos) {
     const preview = data.preview[ano];
     if (!preview) continue;
-
-    const orig = preview.origem;
-    const dest = preview.destino;
-    const cols = preview.colunas;
-    const qo = data.resumo[ano]?.origem || 0;
-    const qd = data.resumo[ano]?.destino || 0;
-
+    const orig = preview.origem, dest = preview.destino, cols = preview.colunas;
+    const qo = data.resumo[ano]?.origem || 0, qd = data.resumo[ano]?.destino || 0;
     const div = document.createElement('div');
     div.className = 'card';
     div.innerHTML = `
@@ -249,8 +229,7 @@ function renderResultado(data) {
           ${(qo+qd) > 50 ? ' · <em>exibindo prévia — exporte para ver todos</em>' : ''}
         </span>
       </h2>
-      <div class="table-wrap">${montarTabela(cols, orig, dest)}</div>
-    `;
+      <div class="table-wrap">${montarTabela(cols, orig, dest)}</div>`;
     container.appendChild(div);
   }
 }
@@ -258,13 +237,9 @@ function renderResultado(data) {
 function montarTabela(cols, orig, dest) {
   const th = cols.map(c => `<th>${c}</th>`).join('');
   let linhas = '';
-  for (const row of orig) {
-    linhas += '<tr>' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
-  }
+  for (const row of orig) linhas += '<tr>' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
   linhas += `<tr class="tr-sep"><td colspan="${cols.length}">▼ &nbsp; DESTINATÁRIO &nbsp; ▼</td></tr>`;
-  for (const row of dest) {
-    linhas += '<tr style="background:#fff0f0">' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
-  }
+  for (const row of dest) linhas += '<tr style="background:#fff0f0">' + cols.map(c => `<td>${row[c]||''}</td>`).join('') + '</tr>';
   return `<table><thead><tr>${th}</tr></thead><tbody>${linhas}</tbody></table>`;
 }
 
@@ -289,47 +264,49 @@ async function exportar() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.xlsx`;
+    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}.xlsx`;
     link.click();
     setStatus('✅ Excel gerado com sucesso.');
-  } catch(e) {
-    clearInterval(intervalo);
-    esconderBarra();
-    setStatus('❌ Erro ao gerar Excel.', 'erro');
-  }
+  } catch(e) { clearInterval(intervalo); esconderBarra(); setStatus('❌ Erro ao gerar Excel.', 'erro'); }
   btn.disabled = false;
 }
 
 async function exportarCSV() {
+  await _exportarGenerico('/exportar/csv', 'btn-exportar-csv', '.csv', 'CSV');
+}
+
+async function exportarZip() {
+  await _exportarGenerico('/exportar/csv_zip', 'btn-exportar-zip', '.zip', 'CSV Zipado');
+}
+
+async function _exportarGenerico(url, btnId, ext, label) {
   const fd = new FormData();
   Object.entries(dadosBusca).forEach(([k,v]) => fd.append(k, v));
-  const btn = document.getElementById('btn-exportar-csv');
-  btn.disabled = true;
-  setStatus('<span class="spinner"></span> Gerando CSV...');
-  mostrarBarra('Gerando arquivo CSV...', 20, 'Processando dados...');
+  const btn = document.getElementById(btnId);
+  if (btn) btn.disabled = true;
+  setStatus(`<span class="spinner"></span> Gerando ${label}...`);
+  mostrarBarra(`Gerando ${label}...`, 20, 'Processando dados...');
   let pct = 20;
   const intervalo = setInterval(() => {
-    if (pct < 85) { pct += Math.random() * 8; mostrarBarra('Gerando arquivo CSV...', Math.min(pct, 85), 'Processando dados...'); }
-  }, 3000);
+    if (pct < 80) { pct += Math.random() * 5; mostrarBarra(`Gerando ${label}...`, Math.min(pct, 80), 'Processando dados...'); }
+    else { pct = Math.min(pct + 0.1, 99); mostrarBarra(`Aguardando servidor...`, pct); }
+  }, 500);
   try {
-    const resp = await fetch('/exportar/csv', { method: 'POST', body: fd });
+    const resp = await fetch(url, { method: 'POST', body: fd });
     clearInterval(intervalo);
-    mostrarBarra('Finalizando CSV...', 95);
+    mostrarBarra('Finalizando...', 95);
     const blob = await resp.blob();
     mostrarBarra('Concluído!', 100, 'Download iniciado!');
     setTimeout(esconderBarra, 2000);
-    const url = URL.createObjectURL(blob);
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const nome_arquivo = match ? match[1] : `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}${ext}`;
+    const urlBlob = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor).replace(/\s/g,'_').substring(0,30)}.csv`;
-    link.click();
-    setStatus('✅ CSV gerado com sucesso.');
-  } catch(e) {
-    clearInterval(intervalo);
-    esconderBarra();
-    setStatus('❌ Erro ao gerar CSV.', 'erro');
-  }
-  btn.disabled = false;
+    link.href = urlBlob; link.download = nome_arquivo; link.click();
+    setStatus(`✅ ${label} gerado com sucesso.`);
+  } catch(e) { clearInterval(intervalo); esconderBarra(); setStatus(`❌ Erro ao gerar ${label}.`, 'erro'); }
+  if (btn) btn.disabled = false;
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });

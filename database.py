@@ -376,7 +376,7 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalid
         if fts_q_e:
             fts_parts.append(f"emissor_nome:{fts_q_e}")
 
-    if fts_parts or cpf:
+    if fts_parts or cpf or finalidade:
         sql_where = []
         if fts_parts:
             fts_full = ' OR '.join(fts_parts)

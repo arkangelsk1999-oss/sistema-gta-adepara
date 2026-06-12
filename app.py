@@ -14,7 +14,7 @@ from database import (
     resolver_localidade, listar_ip_localidade, salvar_ip_localidade, excluir_ip_localidade,
     listar_finalidades
 )
-from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado, gerar_excel_lai
+from relatorio import gerar_excel_resultado, gerar_pdf_auditoria, gerar_csv_resultado, gerar_excel_lai, gerar_csv_zipado
 from database_gta2026 import (
     init_db_2026, buscar_gtas_2026, buscar_gtas_2026_lai,
     stats_2026, arquivo_ja_importado_2026, importar_dataframe_2026,
@@ -250,8 +250,8 @@ def buscar():
     ano_ini = request.form.get('ano_ini', '').strip()
     ano_fim = request.form.get('ano_fim', '').strip()
     finalidade = request.form.get('finalidade', '').strip()
-    if not nome and not cpf and not emissor:
-        return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
+    if not nome and not cpf and not emissor and not finalidade:
+        return jsonify({'erro': 'Informe nome, CPF/CNPJ, usuário emissor ou finalidade'}), 400
 
     try:
         resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
@@ -317,8 +317,10 @@ def exportar_excel():
     ano_ini = request.form.get('ano_ini', '')
     ano_fim = request.form.get('ano_fim', '')
 
+    finalidade = request.form.get('finalidade', '').strip()
     resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
-                             ano_ini=ano_ini or None, ano_fim=ano_fim or None)
+                             ano_ini=ano_ini or None, ano_fim=ano_fim or None,
+                             finalidade=finalidade or None)
     if not resultado:
         return 'Sem resultados', 404
 
@@ -329,7 +331,7 @@ def exportar_excel():
 
 @app.route('/exportar/csv', methods=['POST'])
 @login_required
-@nivel_required('founder')
+@nivel_required('founder', 'master')
 def exportar_csv():
     nome    = request.form.get('nome', '')
     cpf     = request.form.get('cpf', '')
@@ -337,8 +339,10 @@ def exportar_csv():
     ano_ini = request.form.get('ano_ini', '')
     ano_fim = request.form.get('ano_fim', '')
 
+    finalidade = request.form.get('finalidade', '').strip()
     resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
-                             ano_ini=ano_ini or None, ano_fim=ano_fim or None)
+                             ano_ini=ano_ini or None, ano_fim=ano_fim or None,
+                             finalidade=finalidade or None)
     if not resultado:
         return 'Sem resultados', 404
 
@@ -982,5 +986,27 @@ def finalidades():
 @login_required
 def finalidades_2026():
     return jsonify(listar_finalidades_2026())
+@app.route('/exportar/csv_zip', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def exportar_csv_zip():
+    nome      = request.form.get('nome', '')
+    cpf       = request.form.get('cpf', '')
+    emissor   = request.form.get('emissor', '')
+    ano_ini   = request.form.get('ano_ini', '')
+    ano_fim   = request.form.get('ano_fim', '')
+    finalidade = request.form.get('finalidade', '').strip()
+
+    resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
+                             ano_ini=ano_ini or None, ano_fim=ano_fim or None,
+                             finalidade=finalidade or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf, nome_arquivo = gerar_csv_zipado(resultado, nome or emissor, cpf,
+                                          finalidade, usuario=get_usuario_session())
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                     mimetype='application/zip')
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
