@@ -500,7 +500,13 @@ def importar_page():
         "SELECT * FROM arquivos_importados ORDER BY ano DESC"
     ).fetchall()]
     conn.close()
-    return render_template('importar.html', importados=importados, usuario=get_usuario_session())
+    return render_template('importar.html',
+                           importados=importados,
+                           importados_2026=listar_arquivos_2026(),
+                           stats_2026=stats_2026(),
+                           importados_gtv=listar_arquivos_gtv(),
+                           stats_gtv=stats_gtv(),
+                           usuario=get_usuario_session())
 
 status_importacao = {}
 
@@ -697,17 +703,19 @@ def gta2026_buscar():
     nome    = request.form.get('nome', '').strip()
     cpf     = request.form.get('cpf', '').strip()
     emissor = request.form.get('emissor', '').strip()
-    mes_ini = request.form.get('mes_ini', '').strip()
-    mes_fim = request.form.get('mes_fim', '').strip()
+    ano_ini = request.form.get('ano_ini', '').strip()
+    ano_fim = request.form.get('ano_fim', '').strip()
     finalidade = request.form.get('finalidade', '').strip()
-    if not nome and not cpf and not emissor:
-        return jsonify({'erro': 'Informe nome, CPF/CNPJ ou usuário emissor'}), 400
+    mes_ini = (ano_ini + '-01') if ano_ini else None
+    mes_fim = (ano_fim + '-12') if ano_fim else None
+    if not nome and not cpf and not emissor and not finalidade:
+        return jsonify({'erro': 'Informe nome, CPF/CNPJ, usuário emissor ou finalidade'}), 400
 
     try:
         resultado = buscar_gtas_2026(
             nome=nome, cpf=cpf, emissor=emissor,
-            mes_ini=mes_ini or None,
-            mes_fim=mes_fim or None,
+            mes_ini=mes_ini,
+            mes_fim=mes_fim,
             finalidade=finalidade or None
         )
 
@@ -761,8 +769,10 @@ def gta2026_exportar_excel():
     nome    = request.form.get('nome', '')
     cpf     = request.form.get('cpf', '')
     emissor = request.form.get('emissor', '')
-    mes_ini = request.form.get('mes_ini', '')
-    mes_fim = request.form.get('mes_fim', '')
+    ano_ini = request.form.get('ano_ini', '').strip()
+    ano_fim = request.form.get('ano_fim', '').strip()
+    mes_ini = (ano_ini + '-01') if ano_ini else None
+    mes_fim = (ano_fim + '-12') if ano_fim else None
 
     resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
                                   mes_ini=mes_ini or None, mes_fim=mes_fim or None)
@@ -783,8 +793,10 @@ def gta2026_exportar_csv():
     nome    = request.form.get('nome', '')
     cpf     = request.form.get('cpf', '')
     emissor = request.form.get('emissor', '')
-    mes_ini = request.form.get('mes_ini', '')
-    mes_fim = request.form.get('mes_fim', '')
+    ano_ini = request.form.get('ano_ini', '').strip()
+    ano_fim = request.form.get('ano_fim', '').strip()
+    mes_ini = (ano_ini + '-01') if ano_ini else None
+    mes_fim = (ano_fim + '-12') if ano_fim else None
 
     resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
                                   mes_ini=mes_ini or None, mes_fim=mes_fim or None)
@@ -1000,6 +1012,30 @@ def exportar_csv_zip():
     resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                              ano_ini=ano_ini or None, ano_fim=ano_fim or None,
                              finalidade=finalidade or None)
+    total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
+    if not resultado or total == 0:
+        return 'Sem resultados', 404
+
+    buf, nome_arquivo = gerar_csv_zipado(resultado, nome or emissor, cpf,
+                                          finalidade, usuario=get_usuario_session())
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
+                     mimetype='application/zip')
+@app.route('/gta2026/exportar/csv_zip', methods=['POST'])
+@login_required
+@nivel_required('founder', 'master')
+def gta2026_exportar_csv_zip():
+    nome      = request.form.get('nome', '')
+    cpf       = request.form.get('cpf', '')
+    emissor   = request.form.get('emissor', '')
+    finalidade = request.form.get('finalidade', '').strip()
+    ano_ini   = request.form.get('ano_ini', '').strip()
+    ano_fim   = request.form.get('ano_fim', '').strip()
+    mes_ini   = (ano_ini + '-01') if ano_ini else None
+    mes_fim   = (ano_fim + '-12') if ano_fim else None
+
+    resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
+                                  mes_ini=mes_ini, mes_fim=mes_fim,
+                                  finalidade=finalidade or None)
     total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
     if not resultado or total == 0:
         return 'Sem resultados', 404

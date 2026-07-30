@@ -17,42 +17,25 @@ body { font-family: Arial, sans-serif; font-size: 14px; background: #f0f0f0; col
 .topbar .titulo { font-size: 15px; font-weight: bold; flex: 1; }
 
 .usuario-info {
-  position: relative;
-  font-size: 12px;
-  opacity: 0.85;
-  margin-right: 16px;
-  text-align: right;
-  cursor: pointer;
-  user-select: none;
+  position: relative; font-size: 12px; opacity: 0.85; margin-right: 16px;
+  text-align: right; cursor: pointer; user-select: none;
 }
 .usuario-info:hover { opacity: 1; }
 
 .menu-usuario {
-  display: none;
-  position: absolute;
-  right: 0;
-  top: 44px;
-  background: white;
-  border-radius: 6px;
-  min-width: 190px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-  z-index: 200;
-  overflow: hidden;
+  display: none; position: absolute; right: 0; top: 44px; background: white;
+  border-radius: 6px; min-width: 190px; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  z-index: 200; overflow: hidden;
 }
 .menu-usuario a {
-  display: block;
-  padding: 12px 16px;
-  text-decoration: none;
-  font-size: 13px;
-  color: #1a5276;
-  border-bottom: 1px solid #eee;
-  transition: background 0.15s;
+  display: block; padding: 12px 16px; text-decoration: none; font-size: 13px;
+  color: #1a5276; border-bottom: 1px solid #eee; transition: background 0.15s;
 }
 .menu-usuario a:last-child { border-bottom: none; color: #c0392b; }
 .menu-usuario a:hover { background: #f0f4fb; }
 
 .sidebar {
-  position: fixed; top: 56px; left: 0; bottom: 0; width: 200px;
+  position: fixed; top: 56px; left: 0; bottom: 0; width: 210px;
   background: #154360; padding-top: 16px; z-index: 90; overflow-y: auto;
 }
 .sidebar a {
@@ -61,18 +44,15 @@ body { font-family: Arial, sans-serif; font-size: 14px; background: #f0f0f0; col
 }
 .sidebar a:hover, .sidebar a.ativo { background: #1a5276; color: white; }
 .sidebar a.modulo-ativo { background: #1a5276; color: white; border-left: 3px solid #f39c12; }
-.sidebar a.em-breve { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 .sidebar .sep { border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0; }
 .sidebar .label { font-size: 10px; color: rgba(255,255,255,0.4); padding: 8px 20px 4px; text-transform: uppercase; letter-spacing: 0.05em; }
-.sidebar .badge-modulo {
-  font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: bold; margin-left: auto;
-}
-.badge-azul   { background: #2e86c1; color: white; }
-.badge-amarelo{ background: #f39c12; color: white; }
-.badge-verde  { background: #1e8449; color: white; }
-.badge-cinza  { background: #7f8c8d; color: white; }
+.sidebar .badge-modulo { font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: bold; margin-left: auto; }
+.badge-azul    { background: #2e86c1; color: white; }
+.badge-amarelo { background: #f39c12; color: white; }
+.badge-verde   { background: #1e8449; color: white; }
+.badge-cinza   { background: #7f8c8d; color: white; }
 
-.conteudo { margin-left: 200px; margin-top: 56px; padding: 24px; min-height: calc(100vh - 56px); }
+.conteudo { margin-left: 210px; margin-top: 56px; padding: 24px; min-height: calc(100vh - 56px); }
 
 .card { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
 .card h2 { font-size: 14px; font-weight: bold; color: #555; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
@@ -165,7 +145,6 @@ tbody tr:hover td { background: #f0f4fb; }
 <div class="topbar">
   <img src="/arkangelsk_logo.png" class="logo-ark" alt="Arkangelsk" onerror="this.style.display='none'">
   <span class="titulo">Sistema de Consulta a Histórico de Emissões — ADEPARÁ</span>
-
   <div class="usuario-info" onclick="toggleMenuUsuario()" id="btn-usuario">
     {{ usuario.nome }} ▾<br>
     <span style="opacity:0.7">{{ usuario.orgao }} · {{ usuario.nivel|upper }}</span>
@@ -177,23 +156,20 @@ tbody tr:hover td { background: #f0f4fb; }
 </div>
 
 <div class="sidebar">
-
-  <!-- MÓDULO GTA 2012-2025 -->
   <div class="label">Módulos</div>
-  <a href="/" class="{{ 'modulo-ativo' if request.path == '/' or (request.path != '/gta2026' and not request.path.startswith('/gta2026') and not request.path.startswith('/gtv')) else '' }}">
+  <a href="/" class="{{ 'modulo-ativo' if request.path == '/' or (not request.path.startswith('/gta2026') and not request.path.startswith('/gtv')) else '' }}">
     🔵 GTA 2012–2025
     <span class="badge-modulo badge-azul">ATIVO</span>
   </a>
   <a href="/gta2026" class="{{ 'modulo-ativo' if request.path.startswith('/gta2026') else '' }}">
-    🟡 GTA 2026
-    <span class="badge-modulo badge-amarelo">2026</span>
+    🟡 GTA 2026 — em diante
+    <span class="badge-modulo badge-amarelo">SIGEAGRO</span>
   </a>
   <a href="/gtv" class="{{ 'modulo-ativo' if request.path.startswith('/gtv') else '' }}">
     🟢 GTV
     <span class="badge-modulo badge-verde">GTV</span>
   </a>
 
-  <!-- ADMINISTRAÇÃO -->
   {% if usuario.nivel in ['founder', 'master'] %}
   <div class="sep"></div>
   <div class="label">Administração</div>
@@ -203,11 +179,10 @@ tbody tr:hover td { background: #f0f4fb; }
   <a href="/importar"      class="{{ 'ativo' if '/importar' in request.path }}">📂 Importar dados</a>
   <div class="sep"></div>
   <div class="label">Acesso à Informação</div>
-  <a href="/lai"           class="{{ 'ativo' if request.path == '/lai' }}">📜 LAI 2012–2025</a>
-  <a href="/gta2026/lai"   class="{{ 'ativo' if request.path == '/gta2026/lai' }}">📜 LAI 2026</a>
-  <a href="/gtv/lai"      class="{{ 'ativo' if request.path == '/gtv/lai' }}">📜 LAI GTV</a>
+  <a href="/lai"         class="{{ 'ativo' if request.path == '/lai' }}">📜 LAI 2012–2025</a>
+  <a href="/gta2026/lai" class="{{ 'ativo' if request.path == '/gta2026/lai' }}">📜 LAI 2026 — em diante</a>
+  <a href="/gtv/lai"     class="{{ 'ativo' if request.path == '/gtv/lai' }}">📜 LAI GTV</a>
   {% endif %}
-
 </div>
 
 <div class="conteudo">
@@ -231,20 +206,15 @@ function toggleMenuUsuario() {
   const menu = document.getElementById('menu-usuario');
   menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
 }
-
 document.addEventListener('click', function(e) {
-  const btn  = document.getElementById('btn-usuario');
+  const btn = document.getElementById('btn-usuario');
   const menu = document.getElementById('menu-usuario');
-  if (btn && menu && !btn.contains(e.target)) {
-    menu.style.display = 'none';
-  }
+  if (btn && menu && !btn.contains(e.target)) menu.style.display = 'none';
 });
 
-const INATIVIDADE_MS  = 30 * 60 * 1000;
-const AVISO_ANTES_MS  = 5  * 60 * 1000;
-let timerInatividade;
-let timerContador;
-let contadorSegundos = 300;
+const INATIVIDADE_MS = 30 * 60 * 1000;
+const AVISO_ANTES_MS = 5  * 60 * 1000;
+let timerInatividade, timerContador, contadorSegundos = 300;
 
 function resetarTimer() {
   clearTimeout(timerInatividade);
@@ -252,7 +222,6 @@ function resetarTimer() {
   document.getElementById('modal-sessao').classList.remove('show');
   timerInatividade = setTimeout(mostrarAviso, INATIVIDADE_MS - AVISO_ANTES_MS);
 }
-
 function mostrarAviso() {
   contadorSegundos = 300;
   document.getElementById('modal-sessao').classList.add('show');
@@ -262,23 +231,14 @@ function mostrarAviso() {
     const s = contadorSegundos % 60;
     document.getElementById('contador-modal').textContent =
       `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    if (contadorSegundos <= 0) {
-      clearInterval(timerContador);
-      window.location = '/logout';
-    }
+    if (contadorSegundos <= 0) { clearInterval(timerContador); window.location = '/logout'; }
   }, 1000);
 }
-
-function renovarSessao() {
-  fetch('/ping').then(() => resetarTimer());
-}
-
+function renovarSessao() { fetch('/ping').then(() => resetarTimer()); }
 ['mousemove','keydown','click','scroll','touchstart'].forEach(ev => {
   document.addEventListener(ev, resetarTimer, { passive: true });
 });
-
 resetarTimer();
 </script>
-
 </body>
 </html>

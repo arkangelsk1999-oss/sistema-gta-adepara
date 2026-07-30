@@ -3,9 +3,11 @@
 
 {% block conteudo %}
 <div class="card">
-  <h2>📂 Importar planilhas GTA</h2>
+  <h2>📂 Importar planilhas GTA / GTV</h2>
   <div class="alerta alerta-info" style="margin-bottom:14px;">
-    Envie arquivos CSV ou XLSX. O sistema detecta automaticamente o formato e ignora arquivos já importados.
+    Envie arquivos CSV ou XLSX. O sistema detecta automaticamente o destino pelo nome do arquivo:
+    <strong>GTA</strong> → base 2026 — em diante &nbsp;|&nbsp; <strong>GTV</strong> → base GTV.
+    Arquivos já importados são ignorados automaticamente.
   </div>
 
   <div id="drop-zone" style="border:2px dashed #aac;border-radius:6px;padding:32px;text-align:center;cursor:pointer;transition:background 0.2s;"
@@ -26,8 +28,71 @@
   <div id="msg-resultado" style="margin-top:12px;font-size:13px;"></div>
 </div>
 
+<!-- BASE 2026 — em diante -->
 <div class="card">
-  <h2>📋 Arquivos já importados</h2>
+  <h2>🟡 Base GTA 2026 — em diante (SIGEAGRO) — arquivos importados</h2>
+  {% if importados_2026 %}
+  <div class="alerta alerta-info" style="margin-bottom:12px;">
+    Total de registros na base: <strong>{{ stats_2026.total|default(0)|int }} registros</strong>
+    {% if stats_2026.data_ini %}
+    — de <strong>{{ stats_2026.data_ini[:7] }}</strong> a <strong>{{ stats_2026.data_fim[:7] }}</strong>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Arquivo</th><th>Registros</th><th>Importado em</th></tr>
+      </thead>
+      <tbody>
+        {% for a in importados_2026 %}
+        <tr>
+          <td>{{ a.nome_arquivo }}</td>
+          <td>{{ '{:,}'.format(a.linhas).replace(',','.') if a.linhas else '—' }}</td>
+          <td>{{ a.importado_em[:16] if a.importado_em else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#aaa;font-size:13px;">Nenhum arquivo importado ainda.</p>
+  {% endif %}
+</div>
+
+<!-- BASE GTV -->
+<div class="card">
+  <h2>🟢 Base GTV — arquivos importados</h2>
+  {% if importados_gtv %}
+  <div class="alerta alerta-info" style="margin-bottom:12px;">
+    Total de registros na base: <strong>{{ stats_gtv.total|default(0)|int }} registros</strong>
+    {% if stats_gtv.data_ini %}
+    — de <strong>{{ stats_gtv.data_ini[:7] }}</strong> a <strong>{{ stats_gtv.data_fim[:7] }}</strong>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Arquivo</th><th>Registros</th><th>Importado em</th></tr>
+      </thead>
+      <tbody>
+        {% for a in importados_gtv %}
+        <tr>
+          <td>{{ a.nome_arquivo }}</td>
+          <td>{{ '{:,}'.format(a.linhas).replace(',','.') if a.linhas else '—' }}</td>
+          <td>{{ a.importado_em[:16] if a.importado_em else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#aaa;font-size:13px;">Nenhum arquivo importado ainda.</p>
+  {% endif %}
+</div>
+
+<!-- BASE 2012-2025 (histórico) -->
+<div class="card">
+  <h2>🔵 Base GTA 2012–2025 (consolidada) — arquivos importados</h2>
   {% if importados %}
   <div class="table-wrap">
     <table>
@@ -83,8 +148,9 @@ async function uploadArquivo(file) {
     return;
   }
 
-  setProgresso(30, 'Processando...');
-  // Polling do status
+  const destino = data.destino ? ` (destino: ${data.destino.toUpperCase()})` : '';
+  setProgresso(30, `Processando${destino}...`);
+
   const jobId = data.job_id;
   const poll  = setInterval(async () => {
     const sr = await fetch('/importar/status/' + encodeURIComponent(jobId));
