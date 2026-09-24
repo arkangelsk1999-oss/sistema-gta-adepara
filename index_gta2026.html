@@ -37,6 +37,15 @@
     </div>
   </div>
 
+  <div class="form-row col2" style="margin-top:8px;">
+    <div>
+      <label>Nº da GTA (somente dígitos significativos, ex: 958007)</label>
+      <input type="text" id="num_gta" placeholder="ex: 672222" maxlength="20"
+             oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+    </div>
+    <div></div>
+  </div>
+
   <div class="form-row col4">
     <div>
       <label>Ano inicial</label>
@@ -145,11 +154,12 @@ async function buscar() {
   const cpf        = document.getElementById('cpf').value.trim();
   const emissor    = document.getElementById('emissor').value.trim();
   const finalidade = document.getElementById('finalidade').value.trim();
+  const num_gta    = document.getElementById('num_gta').value.trim();
   const anoIni     = document.getElementById('ano_ini').value.trim();
   const anoFim     = document.getElementById('ano_fim').value.trim();
 
-  if (!nome && !cpf && !emissor && !finalidade) {
-    setStatus('⚠️ Informe nome, CPF/CNPJ, usuário emissor ou finalidade.', 'erro');
+  if (!nome && !cpf && !emissor && !finalidade && !num_gta) {
+    setStatus('⚠️ Informe nome, CPF/CNPJ, usuário emissor, finalidade ou número da GTA.', 'erro');
     return;
   }
 
@@ -167,6 +177,7 @@ async function buscar() {
   const fd = new FormData();
   fd.append('nome', nome); fd.append('cpf', cpf);
   fd.append('emissor', emissor); fd.append('finalidade', finalidade);
+  fd.append('num_gta', num_gta);
   fd.append('ano_ini', anoIni); fd.append('ano_fim', anoFim);
 
   const controller = new AbortController();
@@ -196,7 +207,7 @@ async function buscar() {
   mostrarBarra('Concluído!', 100, `${data.total.toLocaleString('pt-BR')} GTAs encontradas`);
   setTimeout(esconderBarra, 2000);
 
-  dadosBusca = { nome, cpf, emissor, finalidade, ano_ini: anoIni, ano_fim: anoFim };
+  dadosBusca = { nome, cpf, emissor, finalidade, num_gta, ano_ini: anoIni, ano_fim: anoFim };
   renderResultado(data);
   setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
   mostrarBotoes();
@@ -205,7 +216,7 @@ async function buscar() {
 function renderResultado(data) {
   document.getElementById('area-resultado').style.display = 'block';
   const chave = Object.keys(data.resumo)[0] || '2026';
-  document.getElementById('nome-encontrado').textContent = dadosBusca.nome || dadosBusca.cpf || dadosBusca.emissor || dadosBusca.finalidade || '';
+  document.getElementById('nome-encontrado').textContent = dadosBusca.nome || dadosBusca.cpf || dadosBusca.emissor || dadosBusca.num_gta || dadosBusca.finalidade || '';
   document.getElementById('cpf-encontrado').textContent  = dadosBusca.cpf ? 'CPF/CNPJ: ' + dadosBusca.cpf : '';
   document.getElementById('badge-resultado').textContent = 'Possui registros na base SIGEAGRO';
 
@@ -272,7 +283,7 @@ async function exportar(tipo) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `GTA_SIGEAGRO_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}.xlsx`;
+      link.download = `GTA_SIGEAGRO_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.num_gta||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}.xlsx`;
       link.click();
       setStatus('✅ Excel gerado com sucesso.');
     } catch(e) { clearInterval(intervalo); esconderBarra(); setStatus('❌ Erro ao gerar Excel.', 'erro'); }

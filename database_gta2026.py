@@ -350,15 +350,19 @@ def _nome_confere_2026(nome_pesquisado, campo):
     return matches >= min(2, len(tokens))
 
 
-def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None, finalidade=None):
+def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None, finalidade=None, num_gta=None):
     """
     Busca no banco gta2026.db.
     mes_ini / mes_fim: strings no formato 'YYYY-MM' para filtrar período.
+    num_gta: somente os dígitos significativos (ex: 958007)
     """
+    import re as _re
     conn = get_conn_2026()
     nome    = nome.strip().upper()
     cpf     = norm_cpf_2026(cpf)
     emissor = emissor.strip().upper()
+    if num_gta:
+        num_gta = _re.sub(r'[^0-9]', '', num_gta).lstrip('0')
 
     params = []
     sql_where = []
@@ -390,9 +394,15 @@ def buscar_gtas_2026(nome='', cpf='', emissor='', mes_ini=None, mes_fim=None, fi
     if mes_fim:
         sql_where.append("g.data_emissao <= ?")
         params.append(mes_fim + '-31')
+
     if finalidade:
         sql_where.append("g.finalidade = ?")
         params.append(finalidade)
+
+    if num_gta:
+        sql_where.append("g.gta_numero LIKE ?")
+        params.append(f'%{num_gta}%')
+
     if not sql_where:
         conn.close()
         return {}
@@ -439,11 +449,11 @@ def stats_2026():
     arquivos = conn.execute("SELECT COUNT(*) FROM arquivos_importados_2026").fetchone()[0]
     conn.close()
     return {
-            'total': total,
-            'data_ini': datas[0],
-            'data_fim': datas[1],
-            'arquivos': arquivos,
-        }
+        'total': total,
+        'data_ini': datas[0],
+        'data_fim': datas[1],
+        'arquivos': arquivos,
+    }
 
 
 _cache_finalidades_2026 = None

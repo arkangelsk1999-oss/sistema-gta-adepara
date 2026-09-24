@@ -357,11 +357,14 @@ def _nome_confere(nome_pesquisado, campo):
     return matches >= min(2, len(tokens))
 
 
-def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalidade=None):
+def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalidade=None, num_gta=None):
     conn = get_conn()
     nome    = nome.strip().upper()
     cpf     = norm_cpf(cpf)
     emissor = emissor.strip().upper()
+    # Limpa número GTA: remove letras e zeros à esquerda
+    if num_gta:
+        num_gta = re.sub(r'[^0-9]', '', num_gta).lstrip('0')
 
     rows = []
     params = []
@@ -376,7 +379,7 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalid
         if fts_q_e:
             fts_parts.append(f"emissor_nome:{fts_q_e}")
 
-    if fts_parts or cpf or finalidade:
+    if fts_parts or cpf or finalidade or num_gta:
         sql_where = []
         if fts_parts:
             fts_full = ' OR '.join(fts_parts)
@@ -394,6 +397,9 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalid
         if finalidade:
             sql_where.append("g.dados_json LIKE ?")
             params.append(f'%{finalidade}%')
+        if num_gta:
+            sql_where.append("g.dados_json LIKE ?")
+            params.append(f'%{num_gta}%')
         sql = f"SELECT g.* FROM gtas g WHERE {' AND '.join(sql_where)} ORDER BY g.ano"
         rows = conn.execute(sql, params).fetchall()
     else:
@@ -430,11 +436,6 @@ def buscar_gtas(nome='', cpf='', emissor='', ano_ini=None, ano_fim=None, finalid
 
 
 def buscar_gtas_lai(ano_ini, ano_fim):
-    """
-    Busca todas as GTAs do período para exportação LAI.
-    Retorna um dicionário por ano com lista de registros.
-    Não requer critério de busca — varre todo o período.
-    """
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM gtas WHERE ano >= ? AND ano <= ? ORDER BY ano",
@@ -446,10 +447,8 @@ def buscar_gtas_lai(ano_ini, ano_fim):
     for row in rows:
         ano   = row['ano']
         dados = _limpar_nan(json.loads(row['dados_json']))
-
         if ano not in resultado:
             resultado[ano] = {'origem': [], 'destino': [], 'colunas': list(dados.keys())}
-
         resultado[ano]['origem'].append(dados)
 
     return resultado
@@ -491,3 +490,10 @@ def listar_finalidades():
     conn.close()
     _cache_finalidades = sorted(set(r[0] for r in rows if r[0]))
     return _cache_finalidades
+
+
+def _periodo_banco():
+    conn = get_conn()
+    r = conn.execute("SELECT MIN(ano), MAX(ano) FROM gtas").fetchone()
+    conn.close()
+    return r[0], r[1]

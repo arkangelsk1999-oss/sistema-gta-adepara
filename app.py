@@ -247,17 +247,19 @@ def buscar():
     nome    = request.form.get('nome', '').strip()
     cpf     = request.form.get('cpf', '').strip()
     emissor = request.form.get('emissor', '').strip()
+    num_gta   = request.form.get('num_gta', '').strip()
     ano_ini = request.form.get('ano_ini', '').strip()
     ano_fim = request.form.get('ano_fim', '').strip()
     finalidade = request.form.get('finalidade', '').strip()
-    if not nome and not cpf and not emissor and not finalidade:
+    if not nome and not cpf and not emissor and not finalidade and not num_gta:
         return jsonify({'erro': 'Informe nome, CPF/CNPJ, usuário emissor ou finalidade'}), 400
 
     try:
         resultado = buscar_gtas(nome=nome, cpf=cpf, emissor=emissor,
                                 ano_ini=ano_ini or None,
                                 ano_fim=ano_fim or None,
-                                finalidade=finalidade or None)
+                                finalidade=finalidade or None,
+                                num_gta=num_gta or None)
 
         total = sum(len(v['origem']) + len(v['destino']) for v in resultado.values())
 
@@ -706,9 +708,10 @@ def gta2026_buscar():
     ano_ini = request.form.get('ano_ini', '').strip()
     ano_fim = request.form.get('ano_fim', '').strip()
     finalidade = request.form.get('finalidade', '').strip()
+    num_gta    = request.form.get('num_gta', '').strip()
     mes_ini = (ano_ini + '-01') if ano_ini else None
     mes_fim = (ano_fim + '-12') if ano_fim else None
-    if not nome and not cpf and not emissor and not finalidade:
+    if not nome and not cpf and not emissor and not finalidade and not num_gta:
         return jsonify({'erro': 'Informe nome, CPF/CNPJ, usuário emissor ou finalidade'}), 400
 
     try:
@@ -716,7 +719,8 @@ def gta2026_buscar():
             nome=nome, cpf=cpf, emissor=emissor,
             mes_ini=mes_ini,
             mes_fim=mes_fim,
-            finalidade=finalidade or None
+            finalidade=finalidade or None,
+            num_gta=num_gta or None
         )
 
         total = sum(
@@ -773,9 +777,11 @@ def gta2026_exportar_excel():
     ano_fim = request.form.get('ano_fim', '').strip()
     mes_ini = (ano_ini + '-01') if ano_ini else None
     mes_fim = (ano_fim + '-12') if ano_fim else None
+    num_gta = request.form.get('num_gta', '').strip()
 
     resultado = buscar_gtas_2026(nome=nome, cpf=cpf, emissor=emissor,
-                                  mes_ini=mes_ini or None, mes_fim=mes_fim or None)
+                                  mes_ini=mes_ini or None, mes_fim=mes_fim or None,
+                    num_gta=num_gta or None)
     total = sum(len(v.get('origem',[])) + len(v.get('destino',[])) for v in resultado.values())
     if not resultado or total == 0:
         return 'Sem resultados', 404

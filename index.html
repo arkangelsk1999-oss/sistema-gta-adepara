@@ -5,7 +5,7 @@
 <div class="card">
   <h2>🔍 Consulta de GTAs</h2>
   <div class="alerta alerta-info" style="margin-bottom:14px;">
-    Preencha ao menos um campo (nome, CPF/CNPJ ou usuário emissor). O período é opcional.
+    Preencha ao menos um campo. O período é opcional.
   </div>
   <div class="form-row col2">
     <div>
@@ -30,6 +30,14 @@
         <option value="">— Todas as finalidades —</option>
       </select>
     </div>
+  </div>
+  <div class="form-row col2" style="margin-top:8px;">
+    <div>
+      <label>Nº da GTA (somente dígitos significativos, ex: 958007)</label>
+      <input type="text" id="num_gta" placeholder="ex: 958007" maxlength="20"
+             oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+    </div>
+    <div></div>
   </div>
   <div class="form-row col4">
     <div>
@@ -94,7 +102,6 @@
 
 <script>
 let dadosBusca = {};
-const LIMITE_VOLUME_GRANDE = 50000;
 
 fetch('/finalidades')
   .then(r => r.json())
@@ -125,13 +132,12 @@ function esconderBarra() {
   document.getElementById('barra-progresso').style.width = '0%';
 }
 
-function mostrarBotoesExportacao(total) {
-  const btnExcel = document.getElementById('btn-exportar');
-  const btnCsv   = document.getElementById('btn-exportar-csv');
-  const btnZip   = document.getElementById('btn-exportar-zip');
-  if (btnExcel) btnExcel.style.display = 'block';
-  if (btnCsv)   btnCsv.style.display   = 'inline-block';
-  if (btnZip)   btnZip.style.display   = 'inline-block';
+function mostrarBotoesExportacao() {
+  document.getElementById('btn-exportar').style.display = 'block';
+  const csv = document.getElementById('btn-exportar-csv');
+  const zip = document.getElementById('btn-exportar-zip');
+  if (csv) csv.style.display = 'inline-block';
+  if (zip) zip.style.display = 'inline-block';
 }
 
 async function buscar() {
@@ -139,20 +145,22 @@ async function buscar() {
   const cpf        = document.getElementById('cpf').value.trim();
   const emissor    = document.getElementById('emissor').value.trim();
   const finalidade = document.getElementById('finalidade').value.trim();
+  const num_gta    = document.getElementById('num_gta').value.trim();
   const anoIni     = document.getElementById('ano_ini').value.trim();
   const anoFim     = document.getElementById('ano_fim').value.trim();
 
-  if (!nome && !cpf && !emissor && !finalidade) {
-    setStatus('⚠️ Informe nome, CPF/CNPJ, usuário emissor ou finalidade.', 'erro');
+  if (!nome && !cpf && !emissor && !finalidade && !num_gta) {
+    setStatus('⚠️ Informe nome, CPF/CNPJ, usuário emissor, finalidade ou número da GTA.', 'erro');
     return;
   }
 
   document.getElementById('area-resultado').style.display = 'none';
   document.getElementById('area-vazio').style.display = 'none';
-  ['btn-exportar','btn-exportar-csv','btn-exportar-zip'].forEach(id => {
-    const b = document.getElementById(id);
-    if (b) b.style.display = 'none';
-  });
+  document.getElementById('btn-exportar').style.display = 'none';
+  const csv = document.getElementById('btn-exportar-csv');
+  const zip = document.getElementById('btn-exportar-zip');
+  if (csv) csv.style.display = 'none';
+  if (zip) zip.style.display = 'none';
 
   setStatus('<span class="spinner"></span> Buscando... (pode demorar alguns minutos para bases grandes)');
   mostrarBarra('Buscando na base de dados...', 10);
@@ -160,6 +168,7 @@ async function buscar() {
   const fd = new FormData();
   fd.append('nome', nome); fd.append('cpf', cpf);
   fd.append('emissor', emissor); fd.append('finalidade', finalidade);
+  fd.append('num_gta', num_gta);
   fd.append('ano_ini', anoIni); fd.append('ano_fim', anoFim);
 
   const controller = new AbortController();
@@ -181,21 +190,18 @@ async function buscar() {
 
   mostrarBarra('Processando resultados...', 90);
   try { data = await resp.json(); }
-  catch(e) { esconderBarra(); setStatus('❌ Erro ao processar resposta: ' + e.message, 'erro'); return; }
+  catch(e) { esconderBarra(); setStatus('❌ Erro ao processar resposta do servidor: ' + e.message, 'erro'); return; }
 
-  try {
-    if (data.erro) { esconderBarra(); setStatus('❌ ' + data.erro, 'erro'); return; }
-    if (data.vazio) { esconderBarra(); setStatus(''); document.getElementById('area-vazio').style.display = 'block'; return; }
+  if (data.erro) { esconderBarra(); setStatus('❌ ' + data.erro, 'erro'); return; }
+  if (data.vazio) { esconderBarra(); setStatus(''); document.getElementById('area-vazio').style.display = 'block'; return; }
 
-    mostrarBarra('Concluído!', 100, `${data.total.toLocaleString('pt-BR')} GTAs encontradas`);
-    setTimeout(esconderBarra, 2000);
+  mostrarBarra('Concluído!', 100, `${data.total.toLocaleString('pt-BR')} GTAs encontradas`);
+  setTimeout(esconderBarra, 2000);
 
-    dadosBusca = { nome, cpf, emissor, finalidade, ano_ini: anoIni, ano_fim: anoFim };
-    renderResultado(data);
-    setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
-    mostrarBotoesExportacao(data.total);
-
-  } catch(e) { esconderBarra(); setStatus('❌ Erro ao renderizar: ' + e.message, 'erro'); }
+  dadosBusca = { nome, cpf, emissor, finalidade, num_gta, ano_ini: anoIni, ano_fim: anoFim };
+  renderResultado(data);
+  setStatus(`✅ ${data.total.toLocaleString('pt-BR')} GTAs encontradas.`);
+  mostrarBotoesExportacao();
 }
 
 function renderResultado(data) {
@@ -264,7 +270,7 @@ async function exportar() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}.xlsx`;
+    link.download = `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.emissor||dadosBusca.num_gta||'resultado').replace(/\s/g,'_').substring(0,30)}.xlsx`;
     link.click();
     setStatus('✅ Excel gerado com sucesso.');
   } catch(e) { clearInterval(intervalo); esconderBarra(); setStatus('❌ Erro ao gerar Excel.', 'erro'); }
@@ -300,7 +306,7 @@ async function _exportarGenerico(url, btnId, ext, label) {
     setTimeout(esconderBarra, 2000);
     const cd = resp.headers.get('Content-Disposition') || '';
     const match = cd.match(/filename="?([^"]+)"?/);
-    const nome_arquivo = match ? match[1] : `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.finalidade||'resultado').replace(/\s/g,'_').substring(0,30)}${ext}`;
+    const nome_arquivo = match ? match[1] : `GTA_${(dadosBusca.nome||dadosBusca.cpf||dadosBusca.num_gta||'resultado').replace(/\s/g,'_').substring(0,30)}${ext}`;
     const urlBlob = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = urlBlob; link.download = nome_arquivo; link.click();
